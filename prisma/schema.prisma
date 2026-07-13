@@ -1,0 +1,367 @@
+// =====================================================
+// Prisma schema — NovaTech Drones
+// Dev: SQLite (zero config). Produção: trocar provider
+// para "postgresql" e ajustar DATABASE_URL no .env.
+// =====================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ---------- Auth ----------
+model User {
+  id           String   @id @default(cuid())
+  name         String
+  email        String   @unique
+  passwordHash String
+  role         String   @default("ADMIN") // ADMIN
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+// ---------- Catálogo ----------
+model Category {
+  id              String     @id @default(cuid())
+  name            String
+  slug            String     @unique
+  description     String     @default("")
+  longDescription String     @default("")
+  imageUrl        String?
+  imageMobileUrl  String?
+  icon            String     @default("tag")
+  status          String     @default("ACTIVE") // ACTIVE | INACTIVE
+  position        Int        @default(0)
+  highlight       Boolean    @default(false)
+  showInMenu      Boolean    @default(true)
+  showOnHome      Boolean    @default(true)
+  showInFooter    Boolean    @default(true)
+  metaTitle       String?
+  metaDescription String?
+  products        Product[]
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+}
+
+model Product {
+  id              String                  @id @default(cuid())
+  name            String
+  slug            String                  @unique
+  shortDescription String                 @default("")
+  fullDescription String                  @default("")
+  price           Float                   @default(0)
+  oldPrice        Float?
+  installments    Int                     @default(1)
+  sku             String                  @unique
+  brand           String                  @default("")
+  stock           Int                     @default(0)
+  status          String                  @default("DRAFT") // ACTIVE | DRAFT | INACTIVE
+  featured        Boolean                 @default(false)
+  position        Int                     @default(0)
+  badge           String?                 // novo | promo | destaque
+  warranty        String                  @default("")
+  packageContent  String                  @default("") // JSON string array
+  metaTitle       String?
+  metaDescription String?
+  categoryId      String
+  category        Category                @relation(fields: [categoryId], references: [id])
+  images          ProductImage[]
+  specifications  ProductSpecification[]
+  faq             ProductFAQ[]
+  benefits        ProductBenefit[]
+  variantOptions  ProductVariantOption[]
+  variants        ProductVariant[]
+  createdAt       DateTime                @default(now())
+  updatedAt       DateTime                @updatedAt
+
+  @@index([status, featured])
+  @@index([categoryId, status])
+}
+
+model ProductImage {
+  id        String   @id @default(cuid())
+  productId String
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  url       String
+  alt       String   @default("")
+  position  Int      @default(0)
+  createdAt DateTime @default(now())
+
+  @@index([productId, position])
+}
+
+model ProductSpecification {
+  id        String  @id @default(cuid())
+  productId String
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  name      String
+  value     String
+  position  Int     @default(0)
+
+  @@index([productId, position])
+}
+
+model ProductFAQ {
+  id        String  @id @default(cuid())
+  productId String
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  question  String
+  answer    String
+  position  Int     @default(0)
+
+  @@index([productId, position])
+}
+
+model ProductBenefit {
+  id        String  @id @default(cuid())
+  productId String
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  text      String
+  position  Int     @default(0)
+
+  @@index([productId, position])
+}
+
+// ---------- Variações ----------
+// Um produto pode ter várias opções (Cor, Tamanho), cada opção tem vários valores
+// (Preto, Azul / P, M, G). Cada combinação vira uma ProductVariant com preço,
+// SKU e estoque próprios. optionsJson guarda o mapa {"Cor":"Preto","Tamanho":"P"}
+// para reidratação rápida sem precisar cruzar as duas tabelas.
+model ProductVariantOption {
+  id        String                 @id @default(cuid())
+  productId String
+  product   Product                @relation(fields: [productId], references: [id], onDelete: Cascade)
+  name      String
+  position  Int                    @default(0)
+  values    ProductVariantValue[]
+  createdAt DateTime               @default(now())
+  updatedAt DateTime               @updatedAt
+
+  @@index([productId, position])
+}
+
+model ProductVariantValue {
+  id        String               @id @default(cuid())
+  optionId  String
+  option    ProductVariantOption @relation(fields: [optionId], references: [id], onDelete: Cascade)
+  value     String
+  imageUrl  String? // Opcional — usada quando a cor/modelo tem foto própria e a combinação final ainda não foi decidida
+  position  Int                  @default(0)
+  createdAt DateTime             @default(now())
+  updatedAt DateTime             @updatedAt
+
+  @@index([optionId, position])
+}
+
+model ProductVariant {
+  id          String   @id @default(cuid())
+  productId   String
+  product     Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  title       String   // "Preto / P"
+  sku         String
+  price       Float
+  oldPrice    Float?
+  stock       Int      @default(0)
+  active      Boolean  @default(true)
+  imageUrl    String?
+  barcode     String?
+  optionsJson String   @default("{}") // {"Cor":"Preto","Tamanho":"P"}
+  position    Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([productId, position])
+  @@index([sku])
+}
+
+// ---------- Personalização da loja ----------
+model StoreSettings {
+  id                       String   @id @default("singleton") // chave fixa
+  storeName                String   @default("TravelTech")
+  shortName                String   @default("TravelTech")
+  tagline                  String   @default("Tudo para viajar com mais praticidade, tecnologia e segurança")
+  logoUrl                  String?
+  logoSize                 Int      @default(36)
+  faviconUrl               String?
+  whatsappNumber           String   @default("5511999999999")
+  whatsappDisplay          String   @default("(11) 99999-9999")
+  email                    String   @default("contato@traveltech.com.br")
+  phone                    String   @default("")
+  instagram                String   @default("")
+  facebook                 String   @default("")
+  tiktok                   String   @default("")
+  youtube                  String   @default("")
+  address                  String   @default("Av. Paulista, 1000 — São Paulo/SP")
+  businessHours            String   @default("Seg. a Sáb. — 9h às 19h")
+
+  // Cores (hex). Os valores padrão refletem o design atual.
+  primaryColor             String   @default("#007396")
+  secondaryColor           String   @default("#0369a1")
+  accentColor              String   @default("#22c55e")
+  backgroundColor          String   @default("#f8fafc")
+  textColor                String   @default("#0f172a")
+
+  // Hero
+  heroTitle                String   @default("Tudo para viajar com mais praticidade, tecnologia e segurança")
+  heroSubtitle             String   @default("Compra rápida, atendimento humano e envio para todo o Brasil.")
+  heroImageUrl             String?
+  heroPrimaryButtonText    String   @default("Ver produtos")
+  heroSecondaryButtonText  String   @default("Comprar pelo WhatsApp")
+
+  // Frete e pagamento
+  shippingNote             String   @default("Frete e disponibilidade serão confirmados pelo WhatsApp.")
+  paymentMethodsJson       String   @default("[\"pix\",\"cartao-credito\",\"cartao-debito\",\"boleto\",\"dinheiro\",\"a-combinar\"]")
+
+  // Conteúdo editável da home (selos do hero, cards de confiança, passos do "como funciona")
+  homeContentJson          String   @default("{}")
+
+  // Footer / institucional
+  footerText               String   @default("Loja especializada em drones, câmeras e eletrônicos premium.")
+
+  // SEO global
+  defaultMetaTitle         String   @default("TravelTech — Tudo para sua viagem")
+  defaultMetaDescription   String   @default("Malas, mochilas, adaptadores e acessórios de viagem com atendimento humano e finalização segura pelo WhatsApp.")
+
+  // Imagem padrão de compartilhamento (Open Graph). Fallback quando produto,
+  // coleção ou página não têm imagem própria. Recomendado 1200×630.
+  defaultOgImageUrl        String?
+
+  // Conteúdo da meta google-site-verification (opcional). Se preenchido, o
+  // layout injeta a tag para verificação do Search Console.
+  searchConsoleVerification String?
+
+  // Segundos entre trocas automáticas do carrossel principal da home.
+  // 2..10s; controlado pelo admin.
+  heroCarouselIntervalSeconds Int @default(5)
+
+  updatedAt                DateTime @updatedAt
+}
+
+model RotatingMessage {
+  id        String   @id @default(cuid())
+  text      String
+  active    Boolean  @default(true)
+  position  Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([active, position])
+}
+
+model HomeBanner {
+  id              String   @id @default(cuid())
+  // Título interno (só admin) — o `title` acima passou a ser o exibido.
+  internalName    String   @default("")
+  title           String
+  subtitle        String   @default("")
+  // Mídia principal. `imageUrl` continua obrigatório (fallback caso vídeo
+  // não carregue ou tipo seja IMAGE).
+  imageUrl        String
+  imageMobileUrl  String?
+  // Vídeo (opcional). Ativado quando `mediaType = 'VIDEO'`.
+  videoUrl        String?
+  videoMobileUrl  String?
+  posterUrl       String?
+  mediaType       String   @default("IMAGE") // IMAGE | VIDEO
+  buttonText      String   @default("")
+  buttonLink      String   @default("")
+  // "_self" (mesma aba) | "_blank" (nova aba)
+  linkTarget      String   @default("_self")
+  // Onde exibir na home. Ver PLACEMENTS em src/lib/db/banners.ts.
+  placement       String   @default("after_trust_bar")
+  active          Boolean  @default(true)
+  position        Int      @default(0)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([active, position])
+  @@index([placement, active, position])
+}
+
+model PageContent {
+  id              String   @id @default(cuid())
+  slug            String   @unique
+  title           String
+  content         String
+  metaTitle       String?
+  metaDescription String?
+  updatedAt       DateTime @updatedAt
+}
+
+// ---------- Pedidos (intenção via WhatsApp) ----------
+model LeadOrder {
+  id               String          @id @default(cuid())
+  customerName     String
+  customerPhone    String
+  customerEmail    String?
+  customerDocument String?
+  deliveryType     String          // entrega | retirada
+  cep              String?
+  street           String?
+  number           String?
+  complement       String?
+  neighborhood     String?
+  city             String?
+  state            String?
+  paymentMethod    String
+  observations     String?
+  subtotal         Float
+  total            Float
+  whatsappMessage  String
+  status           String          @default("NOVO") // NOVO | EM_ATENDIMENTO | CONFIRMADO | CANCELADO | FECHADO
+  items            LeadOrderItem[]
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+
+  @@index([status, createdAt])
+}
+
+model LeadOrderItem {
+  id           String    @id @default(cuid())
+  leadOrderId  String
+  leadOrder    LeadOrder @relation(fields: [leadOrderId], references: [id], onDelete: Cascade)
+  productId    String?
+  productName  String
+  sku          String
+  quantity     Int
+  unitPrice    Float
+  subtotal     Float
+  variantId    String?
+  variantTitle String?
+
+  @@index([leadOrderId])
+}
+
+// Tracking de sessões dos visitantes — completamente interno, sem dados pessoais.
+//
+// visitorId  → identifica o navegador (persistente em localStorage)
+// sessionId  → identifica uma visita específica (rotaciona a cada 30 min de
+//              inatividade ou na virada do dia)
+//
+// Upsert é por sessionId; "Visitantes agora" usa COUNT(DISTINCT visitorId).
+model VisitorSession {
+  id           String    @id @default(cuid())
+  sessionId    String    @unique
+  visitorId    String
+  firstSeenAt  DateTime  @default(now())
+  lastSeenAt   DateTime  @default(now())
+  // Online/offline: heartbeat liga (isActive=true), pagehide/sendBeacon desliga
+  // (isActive=false, leftAt=now). Combinado com lastSeenAt curto, evita "fantasmas".
+  isActive     Boolean   @default(true)
+  leftAt       DateTime?
+  convertedAt  DateTime?
+  leadOrderId  String?
+  device       String?
+  currentPath  String?
+  cartItems    Int?
+
+  @@index([visitorId])
+  @@index([lastSeenAt])
+  @@index([firstSeenAt])
+  @@index([convertedAt])
+  @@index([isActive, lastSeenAt])
+}
