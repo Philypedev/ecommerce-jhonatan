@@ -12,4 +12,5 @@ out
 tsconfig.tsbuildinfo
 prisma/dev.db
 *.db
+*.db-journal
 data/*.xlsx

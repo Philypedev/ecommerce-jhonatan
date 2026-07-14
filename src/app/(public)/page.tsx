@@ -35,10 +35,14 @@ export default async function HomePage() {
   // `cats` só é usado como fallback do CTA do carrossel — a home NÃO renderiza
   // mais a seção de "Explore por categoria". A navegação por coleções vive no
   // header/footer/páginas de categoria.
-  const [settings, cats, featured, bannersByPlacement] = await Promise.all([
-    getStoreSettings(),
+  //
+  // A vitrine "Novidades" é alimentada por UMA coleção específica escolhida
+  // pelo admin (StoreSettings.featuredCategoryId). Sem coleção configurada,
+  // getFeaturedProducts devolve [] e a seção some.
+  const settings = await getStoreSettings();
+  const [cats, featured, bannersByPlacement] = await Promise.all([
     getPublicCategories(),
-    getFeaturedProducts(8),
+    getFeaturedProducts(settings.featuredCategoryId ?? null, 8),
     getActiveBannersByPlacement(),
   ]);
 

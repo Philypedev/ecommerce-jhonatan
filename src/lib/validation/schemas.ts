@@ -201,6 +201,19 @@ export const storeSettingsSchema = z.object({
   defaultMetaDescription: z.string().min(1),
 });
 
+/**
+ * Coleção que alimenta a vitrine "Novidades para sua viagem" da home.
+ * String vazia é normalizada para null (nenhuma coleção → vitrine some).
+ */
+export const homeFeaturedCategorySchema = z.object({
+  featuredCategoryId: z
+    .string()
+    .nullable()
+    .optional()
+    .transform((v) => (v && v.trim() ? v.trim() : null)),
+});
+export type HomeFeaturedCategoryInput = z.infer<typeof homeFeaturedCategorySchema>;
+
 /** Configuração do carrossel principal — só o intervalo (2..10s). */
 export const heroCarouselSettingsSchema = z.object({
   intervalSeconds: z.coerce.number().int().min(2, 'Mínimo 2 segundos').max(10, 'Máximo 10 segundos'),

@@ -33,7 +33,9 @@ ENV CLOUDINARY_CLOUD_NAME=build_placeholder
 ENV CLOUDINARY_API_KEY=build_placeholder
 ENV CLOUDINARY_API_SECRET=build_placeholder
 
-RUN npx prisma db push --skip-generate
+# `npm run build` já chama `prisma generate && next build`.
+# Não usamos `prisma db push` no build — o banco de produção é
+# populado no runtime via `prisma migrate deploy` (ver entrypoint).
 RUN npm run build
 
 
@@ -41,7 +43,10 @@ FROM node:22-bookworm-slim AS runner
 
 WORKDIR /app
 
-RUN apt-get update && apt-get install -y --no-install-recommends openssl ca-certificates \
+# sqlite3 é necessário para o entrypoint detectar bancos legados
+# criados via `prisma db push` (sem tabela _prisma_migrations)
+# e fazer baseline antes do `migrate deploy`.
+RUN apt-get update && apt-get install -y --no-install-recommends openssl ca-certificates sqlite3 \
   && rm -rf /var/lib/apt/lists/*
 
 ENV NODE_ENV=production
@@ -55,7 +60,14 @@ COPY --from=builder /app/.next ./.next
 COPY --from=builder /app/public ./public
 COPY --from=builder /app/prisma ./prisma
 COPY --from=builder /app/next.config.mjs ./next.config.mjs
+COPY docker-entrypoint.sh /app/docker-entrypoint.sh
+RUN chmod +x /app/docker-entrypoint.sh
 
 EXPOSE 3100
 
-CMD ["sh", "-c", "mkdir -p /var/lib/traveltech && npx prisma db push && npm run start"]
+# O entrypoint garante:
+#   1. Diretório do SQLite existe (para volume persistente).
+#   2. Baseline seguro se banco veio de `db push`.
+#   3. `prisma migrate deploy` antes do server subir.
+#   4. `npm run start` com `exec` para forward de sinais.
+CMD ["/app/docker-entrypoint.sh"]

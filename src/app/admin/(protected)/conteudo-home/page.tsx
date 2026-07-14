@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { prisma } from '@/lib/prisma';
 import { getStoreSettings } from '@/lib/db/settings';
+import { getAllCategories } from '@/lib/db/categories';
 import { parseHomeContent } from '@/lib/homeContent';
 import {
   homeContentSavedStates,
@@ -8,6 +9,7 @@ import {
   isRealHeroTitle,
 } from '@/lib/admin/configChecks';
 import { HomeContentForm } from './HomeContentForm';
+import { HomeFeaturedCategoryForm } from './HomeFeaturedCategoryForm';
 
 export const dynamic = 'force-dynamic';
 
@@ -109,6 +111,12 @@ const AlertRow = ({
 export default async function AdminHomePage() {
   const settings = await getStoreSettings();
   const content = parseHomeContent(settings.homeContentJson);
+  const allCategories = await getAllCategories();
+
+  // A vitrine "Novidades" só mostra produtos ACTIVE + featured E vinculados à
+  // coleção escolhida em settings.featuredCategoryId. O contador reflete
+  // exatamente essa regra para o card não mentir sobre quantos aparecem.
+  const featuredCategoryId = settings.featuredCategoryId ?? null;
 
   // Contagens reais — todas do banco, nada de mock.
   const [
@@ -119,7 +127,15 @@ export default async function AdminHomePage() {
   ] = await Promise.all([
     prisma.rotatingMessage.count({ where: { active: true } }),
     prisma.category.count({ where: { status: 'ACTIVE', showOnHome: true } }),
-    prisma.product.count({ where: { status: 'ACTIVE', featured: true } }),
+    featuredCategoryId
+      ? prisma.product.count({
+          where: {
+            status: 'ACTIVE',
+            featured: true,
+            categoryId: featuredCategoryId,
+          },
+        })
+      : Promise.resolve(0),
     prisma.homeBanner.count({ where: { active: true } }),
   ]);
 
@@ -188,10 +204,14 @@ export default async function AdminHomePage() {
       name: 'Produtos em destaque',
       type: 'Vitrine principal',
       status: productsStatus,
-      metric: `${featuredProducts} produto${featuredProducts === 1 ? '' : 's'} marcado${featuredProducts === 1 ? '' : 's'} como destaque`,
-      description: 'Produtos com a flag "Destaque" ativa aparecem nessa vitrine.',
+      metric: featuredCategoryId
+        ? `${featuredProducts} produto${featuredProducts === 1 ? '' : 's'} destacado${featuredProducts === 1 ? '' : 's'} nesta coleção`
+        : 'Nenhuma coleção escolhida para a vitrine',
+      description:
+        'Só aparecem produtos ACTIVE + com "Destacar na home" marcado + vinculados à coleção configurada abaixo.',
       editHref: '/admin/produtos',
       editLabel: 'Ver produtos',
+      inlineAnchor: '#vitrine-colecao',
     },
     {
       name: 'Banners promocionais',
@@ -231,7 +251,25 @@ export default async function AdminHomePage() {
   if (!heroTitleReal) alerts.push({ tone: 'info', title: 'Texto do hero ainda é o padrão', description: 'Personalize o título principal para refletir o tom da sua loja.', href: '/admin/personalizacao#hero', label: 'Editar texto' });
   if (activeRotatingMessages === 0) alerts.push({ tone: 'warning', title: 'Faixa rotativa sem mensagens ativas', description: 'A barra superior aparece vazia. Cadastre ao menos 1 mensagem.', href: '/admin/personalizacao#mensagens', label: 'Adicionar mensagem' });
   if (categoriesOnHome === 0) alerts.push({ tone: 'warning', title: 'Nenhuma coleção marcada para a home', description: 'Marque a flag "Exibir na home" nas coleções que devem aparecer em destaque.', href: '/admin/categorias', label: 'Selecionar coleções' });
-  if (featuredProducts === 0) alerts.push({ tone: 'warning', title: 'Nenhum produto em destaque', description: 'Sem produtos featured, a vitrine principal fica vazia.', href: '/admin/produtos', label: 'Marcar destaques' });
+  if (!featuredCategoryId) {
+    alerts.push({
+      tone: 'warning',
+      title: 'Vitrine sem coleção configurada',
+      description:
+        'Escolha a coleção que alimenta a seção "Novidades para sua viagem" para que ela apareça na home.',
+      href: '#vitrine-colecao',
+      label: 'Escolher coleção',
+    });
+  } else if (featuredProducts === 0) {
+    alerts.push({
+      tone: 'warning',
+      title: 'Nenhum produto destacado nesta coleção',
+      description:
+        'Marque "Destacar na home" em produtos ACTIVE dessa coleção para que apareçam na vitrine.',
+      href: '/admin/produtos',
+      label: 'Marcar destaques',
+    });
+  }
   if (activeBanners === 0) alerts.push({ tone: 'info', title: 'Nenhum banner promocional ativo', description: 'Banners não são obrigatórios, mas ajudam a divulgar campanhas. Adicione um para reforçar uma oferta.', href: '/admin/banners', label: 'Criar banner' });
   if (homeStates.heroBadges !== 'configured') alerts.push({ tone: 'info', title: 'Selos do hero usando padrão', description: 'Edite os selos abaixo para refletir os benefícios reais da sua loja.', href: '#selos', label: 'Editar selos' });
   if (homeStates.howItWorks !== 'configured') alerts.push({ tone: 'info', title: 'Passos do "Como funciona" usando padrão', description: 'Personalize os passos para descrever exatamente seu fluxo de compra.', href: '#como-funciona', label: 'Editar passos' });
@@ -305,6 +343,24 @@ export default async function AdminHomePage() {
           </div>
         </section>
       )}
+
+      {/* ─────── Coleção da vitrine principal ─────── */}
+      <section className="space-y-3" id="vitrine-colecao">
+        <div>
+          <h2 className="text-base font-extrabold text-ink-900 md:text-lg">
+            Vitrine principal
+          </h2>
+          <p className="mt-0.5 text-xs text-ink-500">
+            Configure qual coleção alimenta a seção &quot;Novidades para sua viagem&quot;.
+          </p>
+        </div>
+        <HomeFeaturedCategoryForm
+          categories={allCategories
+            .filter((c) => c.status === 'ACTIVE')
+            .map((c) => ({ id: c.id, name: c.name }))}
+          initial={featuredCategoryId}
+        />
+      </section>
 
       {/* ─────── Edição inline das 3 seções textuais ─────── */}
       <section className="space-y-3">

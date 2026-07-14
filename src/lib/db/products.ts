@@ -51,38 +51,42 @@ const attachOne = async (product: ProductWithRelations | null): Promise<void> =>
 };
 
 /**
- * Vitrine "Novidades para sua viagem" — busca produtos featured primeiro,
- * completa com produtos ACTIVE recentes quando não há featured suficientes.
+ * Vitrine "Novidades para sua viagem" da home.
  *
- * Regra pedida pelo cliente: um produto novo cadastrado como ACTIVE deve
- * aparecer na home mesmo sem estar marcado como Destaque, quando há espaço
- * na vitrine.
+ * REGRA (estrita — sem fallback): só entram produtos que atendem AS TRÊS
+ * condições ao mesmo tempo:
+ *   - `status = 'ACTIVE'` (publicação está ligada)
+ *   - `featured = true` (checkbox "Destacar na home" está marcado)
+ *   - `categoryId = featuredCategoryId` (coleção configurada em
+ *     StoreSettings.featuredCategoryId — escolhida no admin em
+ *     /admin/conteudo-home)
+ *
+ * Se `featuredCategoryId` for null (admin não escolheu coleção) OU nenhum
+ * produto satisfaz as 3 regras, devolve `[]` e o `<FeaturedProducts>`
+ * renderiza null (a seção some). NUNCA completamos com produtos não
+ * destacados ou de outra coleção — as três regras são independentes e
+ * cumulativas.
+ *
+ * Parâmetros:
+ *   `featuredCategoryId`: injetado pela home page (que já lê StoreSettings)
+ *     — mantém esta função pura/testável sem hard-dep de settings.
  */
-export const getFeaturedProducts = async (limit = 8): Promise<ProductWithRelations[]> => {
-  const featured = await prisma.product.findMany({
-    where: { status: 'ACTIVE', featured: true },
+export const getFeaturedProducts = async (
+  featuredCategoryId: string | null,
+  limit = 8,
+): Promise<ProductWithRelations[]> => {
+  if (!featuredCategoryId) return [];
+
+  const items = await prisma.product.findMany({
+    where: {
+      status: 'ACTIVE',
+      featured: true,
+      categoryId: featuredCategoryId,
+    },
     orderBy: { updatedAt: 'desc' },
     take: limit,
     include: fullInclude,
   });
-
-  let items: ProductWithRelations[] = featured;
-
-  if (items.length < limit) {
-    const missing = limit - items.length;
-    const fillers = await prisma.product.findMany({
-      where: {
-        status: 'ACTIVE',
-        featured: false,
-        NOT: { id: { in: items.map((p) => p.id) } },
-      },
-      orderBy: { updatedAt: 'desc' },
-      take: missing,
-      include: fullInclude,
-    });
-    items = [...items, ...fillers];
-  }
-
   await attachValueImages(items);
   return items;
 };

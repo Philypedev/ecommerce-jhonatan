@@ -241,6 +241,14 @@ model StoreSettings {
   // 2..10s; controlado pelo admin.
   heroCarouselIntervalSeconds Int @default(5)
 
+  // Coleção que alimenta a vitrine "Novidades para sua viagem" da home.
+  // Referencia Category.id (sem @relation aqui pra evitar bidirecionalidade
+  // no schema — a integridade é gerida em software: se a coleção é apagada,
+  // o valor vira null via limpeza manual ou a query devolve vazio).
+  //
+  // null → nenhuma coleção escolhida → vitrine some da home.
+  featuredCategoryId       String?
+
   updatedAt                DateTime @updatedAt
 }
 
