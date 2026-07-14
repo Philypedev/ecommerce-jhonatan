@@ -1,4 +1,3 @@
-import Link from 'next/link';
 import { getAllCategories } from '@/lib/db/categories';
 import { ProductForm } from '@/components/admin/ProductForm';
 
@@ -7,33 +6,35 @@ export const dynamic = 'force-dynamic';
 export default async function NewProductPage({
   searchParams,
 }: {
-  searchParams: Promise<{ categoryId?: string }>;
+  searchParams: Promise<{ categoryId?: string; saved?: string; as?: string }>;
 }) {
-  const { categoryId } = await searchParams;
+  const { categoryId, saved, as } = await searchParams;
   const categories = await getAllCategories();
 
-  if (categories.length === 0) {
-    return (
-      <div className="rounded-2xl border border-ink-100 bg-white p-8 text-center shadow-card">
-        <h1 className="text-xl font-bold text-ink-900">Crie uma categoria antes</h1>
-        <p className="mt-2 text-sm text-ink-500">Você precisa de pelo menos uma categoria para cadastrar produtos.</p>
-        <Link href="/admin/categorias" className="btn-primary mt-5 inline-flex">Ir para categorias</Link>
-      </div>
-    );
-  }
+  // Não bloqueamos mais quando não há categorias — rascunho aceita categoryId
+  // vazio. Se o admin publicar sem categoria a Zod (superRefine) barra e o
+  // form mostra "Para publicar, escolha uma coleção".
 
   const preselectCategory =
     categoryId && categories.some((c) => c.id === categoryId) ? categoryId : '';
+
+  const savedAs =
+    as === 'draft' || as === 'active' || as === 'inactive' ? as : undefined;
 
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-extrabold text-ink-900">Novo produto</h1>
-        <p className="text-sm text-ink-500">Preencha as informações e publique no catálogo.</p>
+        <p className="text-sm text-ink-500">
+          Salve como rascunho a qualquer momento — a validação completa só é
+          aplicada ao publicar.
+        </p>
       </div>
       <ProductForm
         categories={categories.map((c) => ({ id: c.id, name: c.name }))}
         initial={preselectCategory ? { categoryId: preselectCategory } : undefined}
+        saved={saved === '1'}
+        savedAs={savedAs}
       />
     </div>
   );

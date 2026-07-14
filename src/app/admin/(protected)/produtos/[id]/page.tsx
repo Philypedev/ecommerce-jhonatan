@@ -36,10 +36,12 @@ export default async function EditProductPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ saved?: string }>;
+  searchParams: Promise<{ saved?: string; as?: string }>;
 }) {
   const { id } = await params;
-  const { saved } = await searchParams;
+  const { saved, as } = await searchParams;
+  const savedAs =
+    as === 'draft' || as === 'active' || as === 'inactive' ? as : undefined;
   const [product, categories] = await Promise.all([
     getProductById(id),
     getAllCategories(),
@@ -55,6 +57,7 @@ export default async function EditProductPage({
       <ProductForm
         productId={product.id}
         saved={saved === '1'}
+        savedAs={savedAs}
         categories={categories.map((c) => ({ id: c.id, name: c.name }))}
         initial={{
           name: product.name,
@@ -70,7 +73,7 @@ export default async function EditProductPage({
           status: product.status as 'ACTIVE' | 'DRAFT' | 'INACTIVE',
           featured: product.featured,
           badge: product.badge ?? '',
-          categoryId: product.categoryId,
+          categoryId: product.categoryId ?? '',
           warranty: product.warranty,
           packageContent: parsePackageContent(product.packageContent),
           benefits: product.benefits.map((b) => b.text),

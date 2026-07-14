@@ -87,17 +87,27 @@ export default async function ProductPage({ params }: { params: Promise<Params> 
           content_type: 'product',
           currency: 'BRL',
           value: product.price,
-          content_category: dbProduct.category.name,
+          // category pode ser null pra rascunho — só ACTIVE exige. Público
+          // acessa rascunho por slug direto (getProductBySlug não filtra por
+          // ACTIVE), então guardamos aqui.
+          content_category: dbProduct.category?.name ?? '',
         }}
       />
 
       <div className="container-x pt-6">
         <nav aria-label="Trilha" className="flex items-center gap-1 text-xs text-ink-500">
           <Link href="/" className="hover:text-ink-900">Início</Link>
-          <ChevronRight size={14} />
-          <Link href={`/categoria/${dbProduct.category.slug}`} className="hover:text-ink-900">
-            {dbProduct.category.name}
-          </Link>
+          {dbProduct.category && (
+            <>
+              <ChevronRight size={14} />
+              <Link
+                href={`/categoria/${dbProduct.category.slug}`}
+                className="hover:text-ink-900"
+              >
+                {dbProduct.category.name}
+              </Link>
+            </>
+          )}
           <ChevronRight size={14} />
           <span className="line-clamp-1 text-ink-700">{product.name}</span>
         </nav>

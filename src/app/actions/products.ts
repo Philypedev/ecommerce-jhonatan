@@ -108,9 +108,31 @@ const ensureUniqueSlug = async (
   }
 };
 
+/**
+ * Rascunho pode chegar com nome vazio, sem SKU e sem slug. Aqui geramos
+ * defaults técnicos pra atender ao banco (slug/sku têm @unique), preservando
+ * a possibilidade do admin trocar depois. Só mexemos em campos vazios.
+ *
+ * `parsed` já passou pelo Zod — em ACTIVE o superRefine bloqueia campos
+ * vazios, então esta função só age em DRAFT/INACTIVE.
+ */
+const applyDraftDefaults = (parsed: ProductInput): void => {
+  if (!parsed.name.trim()) {
+    parsed.name = 'Produto sem título';
+  }
+  if (!parsed.sku.trim()) {
+    // Sufixo curto pra garantir @unique sem revelar informação sensível.
+    const suffix = Math.random().toString(36).slice(2, 8).toUpperCase();
+    parsed.sku = `RASCUNHO-${suffix}`;
+  }
+  // slug fica com string vazia — ensureUniqueSlug transforma em `produto`
+  // (ou `produto-2`, `produto-3`, ...) na inserção.
+};
+
 export async function createProductAction(input: ProductInput) {
   await requireAdmin();
   const parsed = productSchema.parse(input);
+  applyDraftDefaults(parsed);
   parsed.slug = await ensureUniqueSlug(parsed.slug || slugify(parsed.name));
 
   const { options: cleanOptions, variants: cleanVariants } = normalizeVariations(
@@ -145,7 +167,9 @@ export async function createProductAction(input: ProductInput) {
           featured: parsed.featured,
           position: parsed.position,
           badge: parsed.badge && parsed.badge !== '' ? parsed.badge : null,
-          categoryId: parsed.categoryId,
+          // categoryId agora é nullable no schema — rascunho sem categoria
+          // grava null e o vínculo fica pendente até publicação.
+          categoryId: parsed.categoryId && parsed.categoryId.trim() ? parsed.categoryId : null,
           warranty: parsed.warranty,
           packageContent: JSON.stringify(parsed.packageContent),
           metaTitle: parsed.metaTitle || null,
@@ -227,12 +251,17 @@ export async function createProductAction(input: ProductInput) {
   );
 
   revalidateAll();
-  redirect(`/admin/produtos/${created.id}?saved=1`);
+  // `as` sinaliza pro form qual mensagem de sucesso mostrar (rascunho vs
+  // publicado). Sem `as` = fallback pra "salvo com sucesso".
+  redirect(
+    `/admin/produtos/${created.id}?saved=1&as=${parsed.status.toLowerCase()}`,
+  );
 }
 
 export async function updateProductAction(id: string, input: ProductInput) {
   await requireAdmin();
   const parsed = productSchema.parse(input);
+  applyDraftDefaults(parsed);
   parsed.slug = await ensureUniqueSlug(parsed.slug || slugify(parsed.name), id);
 
   const { options: cleanOptions, variants: cleanVariants } = normalizeVariations(
@@ -273,7 +302,9 @@ export async function updateProductAction(id: string, input: ProductInput) {
           featured: parsed.featured,
           position: parsed.position,
           badge: parsed.badge && parsed.badge !== '' ? parsed.badge : null,
-          categoryId: parsed.categoryId,
+          // categoryId nullable no schema — draft aceita null e o produto
+          // deixa de ser público até que uma categoria seja definida.
+          categoryId: parsed.categoryId && parsed.categoryId.trim() ? parsed.categoryId : null,
           warranty: parsed.warranty,
           packageContent: JSON.stringify(parsed.packageContent),
           metaTitle: parsed.metaTitle || null,
@@ -376,7 +407,7 @@ export async function updateProductAction(id: string, input: ProductInput) {
   );
 
   revalidateAll();
-  redirect(`/admin/produtos/${id}?saved=1`);
+  redirect(`/admin/produtos/${id}?saved=1&as=${parsed.status.toLowerCase()}`);
 }
 
 export async function deleteProductAction(id: string) {

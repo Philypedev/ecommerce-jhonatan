@@ -74,7 +74,10 @@ export const toLegacyProduct = (p: ProductWithRelations): LegacyProduct => {
     stock: p.stock,
     sku: p.sku,
     brand: p.brand,
-    categorySlug: p.category.slug,
+    // p.category pode ser null agora (rascunho sem categoria). Público só
+    // acessa produtos ACTIVE, que exigem categoria via superRefine — mas
+    // guardamos aqui para a página admin de edição não estourar.
+    categorySlug: p.category?.slug ?? '',
     badge,
     images:
       p.images.length > 0

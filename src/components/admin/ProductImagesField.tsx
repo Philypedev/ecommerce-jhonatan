@@ -51,7 +51,20 @@ export const ProductImagesField = ({ images, onChange, hint }: Props) => {
     onChange(next);
   };
 
+  /** Promove imagem para índice 0 (capa). Preserva ordem relativa das demais. */
+  const setAsCover = (idx: number) => {
+    if (idx === 0) return;
+    const next = images.slice();
+    const [item] = next.splice(idx, 1);
+    next.unshift(item);
+    onChange(next);
+  };
+
   const remove = (idx: number) => onChange(images.filter((_, i) => i !== idx));
+
+  /** Formata badge do índice: "Capa" pra 0, "2ª imagem", "3ª imagem", ... */
+  const badgeLabel = (idx: number): string =>
+    idx === 0 ? 'Capa' : `${idx + 1}ª imagem`;
 
   const updateAlt = (idx: number, alt: string) => {
     const next = images.slice();
@@ -139,65 +152,85 @@ export const ProductImagesField = ({ images, onChange, hint }: Props) => {
 
       {/* ─── Grid de imagens ─── */}
       {images.length > 0 && (
-        <ul className="mt-4 grid gap-3 sm:grid-cols-2">
-          {images.map((img, i) => (
-            <li
-              key={`${img.url}-${i}`}
-              className="flex gap-3 rounded-xl border border-ink-100 bg-white p-3"
-            >
-              <div className="relative h-20 w-20 shrink-0 overflow-hidden rounded-lg bg-ink-100">
-                <Image
-                  src={img.url}
-                  alt={img.alt || 'Imagem'}
-                  fill
-                  sizes="80px"
-                  className="object-cover"
-                />
-                {i === 0 && (
-                  <span className="absolute left-1 top-1 rounded bg-brand-900 px-1.5 py-0.5 text-[10px] font-bold text-white">
-                    Capa
+        <>
+          <p className="mt-4 text-[11px] text-ink-500">
+            A ordem abaixo é a mesma exibida na loja — a{' '}
+            <span className="font-semibold text-ink-700">Capa</span> aparece
+            primeiro em cards e miniaturas.
+          </p>
+          <ul className="mt-2 grid gap-3 sm:grid-cols-2">
+            {images.map((img, i) => (
+              <li
+                key={`${img.url}-${i}`}
+                className={`flex gap-3 rounded-xl border p-3 ${
+                  i === 0 ? 'border-brand-300 bg-brand-50/40' : 'border-ink-100 bg-white'
+                }`}
+              >
+                <div className="relative h-20 w-20 shrink-0 overflow-hidden rounded-lg bg-ink-100">
+                  <Image
+                    src={img.url}
+                    alt={img.alt || 'Imagem'}
+                    fill
+                    sizes="80px"
+                    className="object-cover"
+                  />
+                  <span
+                    className={`absolute left-1 top-1 rounded px-1.5 py-0.5 text-[10px] font-bold text-white ${
+                      i === 0 ? 'bg-brand-900' : 'bg-ink-900/80'
+                    }`}
+                  >
+                    {badgeLabel(i)}
                   </span>
-                )}
-              </div>
-              <div className="flex flex-1 flex-col gap-2">
-                <input
-                  type="text"
-                  value={img.alt}
-                  onChange={(e) => updateAlt(i, e.target.value)}
-                  placeholder="Texto alternativo (alt)"
-                  className="field-input h-8 text-xs"
-                />
-                <div className="flex items-center gap-1">
-                  <button
-                    type="button"
-                    onClick={() => move(i, -1)}
-                    disabled={i === 0}
-                    aria-label="Mover para cima"
-                    className="rounded-md border border-ink-300 px-2 py-1 text-xs hover:bg-ink-100 disabled:opacity-40"
-                  >
-                    ↑
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => move(i, 1)}
-                    disabled={i === images.length - 1}
-                    aria-label="Mover para baixo"
-                    className="rounded-md border border-ink-300 px-2 py-1 text-xs hover:bg-ink-100 disabled:opacity-40"
-                  >
-                    ↓
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => remove(i)}
-                    className="ml-auto rounded-md border border-rose-200 px-2 py-1 text-xs font-semibold text-rose-600 hover:bg-rose-50"
-                  >
-                    Remover
-                  </button>
                 </div>
-              </div>
-            </li>
-          ))}
-        </ul>
+                <div className="flex flex-1 flex-col gap-2">
+                  <input
+                    type="text"
+                    value={img.alt}
+                    onChange={(e) => updateAlt(i, e.target.value)}
+                    placeholder="Texto alternativo (alt)"
+                    className="field-input h-8 text-xs"
+                  />
+                  <div className="flex flex-wrap items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => setAsCover(i)}
+                      disabled={i === 0}
+                      title={i === 0 ? 'Esta já é a capa' : 'Usar como capa do produto'}
+                      className="rounded-md border border-brand-300 bg-white px-2 py-1 text-[11px] font-semibold text-brand-700 hover:bg-brand-50 disabled:cursor-not-allowed disabled:border-ink-200 disabled:text-ink-500 disabled:hover:bg-white"
+                    >
+                      {i === 0 ? 'É a capa' : 'Definir como capa'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => move(i, -1)}
+                      disabled={i === 0}
+                      aria-label="Mover para cima"
+                      className="rounded-md border border-ink-300 px-2 py-1 text-xs hover:bg-ink-100 disabled:opacity-40"
+                    >
+                      ↑
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => move(i, 1)}
+                      disabled={i === images.length - 1}
+                      aria-label="Mover para baixo"
+                      className="rounded-md border border-ink-300 px-2 py-1 text-xs hover:bg-ink-100 disabled:opacity-40"
+                    >
+                      ↓
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => remove(i)}
+                      className="ml-auto rounded-md border border-rose-200 px-2 py-1 text-xs font-semibold text-rose-600 hover:bg-rose-50"
+                    >
+                      Remover
+                    </button>
+                  </div>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </>
       )}
     </div>
   );

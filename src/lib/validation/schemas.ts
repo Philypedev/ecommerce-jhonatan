@@ -41,23 +41,36 @@ export const changePasswordSchema = z
 export const productStatusSchema = z.enum(['ACTIVE', 'DRAFT', 'INACTIVE']);
 export const productBadgeSchema = z.enum(['novo', 'promo', 'destaque']).optional();
 
-export const productSchema = z.object({
-  name: z.string().min(2, 'Nome obrigatório'),
-  slug: z.string().min(2, 'Slug obrigatório').regex(/^[a-z0-9-]+$/, 'Slug inválido'),
-  shortDescription: z.string().default(''),
-  fullDescription: z.string().default(''),
-  price: z.coerce.number().nonnegative('Preço deve ser positivo'),
-  oldPrice: z.coerce.number().nonnegative().nullable().optional(),
-  installments: z.coerce.number().int().min(1).max(24).default(1),
-  sku: z.string().min(1, 'SKU obrigatório'),
-  brand: z.string().default(''),
-  stock: z.coerce.number().int().min(0).default(0),
-  status: productStatusSchema.default('DRAFT'),
-  featured: z.coerce.boolean().default(false),
-  position: z.coerce.number().int().default(0),
-  badge: z.string().optional(),
-  categoryId: z.string().min(1, 'Categoria obrigatória'),
-  warranty: z.string().default(''),
+/**
+ * Regras de validação do produto:
+ *
+ * Base (aplica em qualquer status): campos são permissivos. Rascunho pode ser
+ * salvo com nome vazio, sem SKU, sem categoria, com preço 0 — a action fará o
+ * preenchimento de defaults ("Produto sem título", `RASCUNHO-<id>`, slug
+ * derivado, categoryId null).
+ *
+ * `superRefine` (só quando status = ACTIVE): exige nome, SKU, categoria e
+ * preço > 0. É o mesmo conjunto de campos que o botão "Publicar" no frontend
+ * bloqueia — validação alinhada entre client e server.
+ */
+export const productSchema = z
+  .object({
+    name: z.string().default(''),
+    slug: z.string().regex(/^[a-z0-9-]*$/, 'Slug inválido').default(''),
+    shortDescription: z.string().default(''),
+    fullDescription: z.string().default(''),
+    price: z.coerce.number().nonnegative('Preço não pode ser negativo').default(0),
+    oldPrice: z.coerce.number().nonnegative().nullable().optional(),
+    installments: z.coerce.number().int().min(1).max(24).default(1),
+    sku: z.string().default(''),
+    brand: z.string().default(''),
+    stock: z.coerce.number().int().min(0).default(0),
+    status: productStatusSchema.default('DRAFT'),
+    featured: z.coerce.boolean().default(false),
+    position: z.coerce.number().int().default(0),
+    badge: z.string().optional(),
+    categoryId: z.string().nullable().optional().default(''),
+    warranty: z.string().default(''),
   packageContent: z.array(z.string()).default([]),
   benefits: z.array(z.string()).default([]),
   specifications: z
@@ -101,7 +114,41 @@ export const productSchema = z.object({
       }),
     )
     .default([]),
-});
+  })
+  .superRefine((data, ctx) => {
+    // Só exigimos campos completos quando o admin está PUBLICANDO. Rascunho
+    // e inativo podem ser salvos incompletos — action preenche defaults.
+    if (data.status !== 'ACTIVE') return;
+
+    if (!data.name.trim() || data.name.trim().length < 2) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['name'],
+        message: 'Para publicar, informe o nome do produto (mínimo 2 caracteres).',
+      });
+    }
+    if (!data.sku.trim()) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['sku'],
+        message: 'Para publicar, informe o SKU.',
+      });
+    }
+    if (!data.categoryId || !data.categoryId.trim()) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['categoryId'],
+        message: 'Para publicar, escolha uma coleção.',
+      });
+    }
+    if (!data.price || data.price <= 0) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['price'],
+        message: 'Para publicar, informe um preço maior que zero.',
+      });
+    }
+  });
 
 export const categorySchema = z.object({
   name: z.string().min(2),

@@ -63,7 +63,9 @@ export async function GET(req: NextRequest) {
         price: p.price,
         stock: p.stock,
         image: p.images[0]?.url ?? '/placeholder.svg',
-        category: p.category.name,
+        // category pode ser null pra rascunho — busca só retorna ACTIVE
+        // (que exige categoria via superRefine), mas guardamos por seguro.
+        category: p.category?.name ?? '',
       })),
       total,
     },

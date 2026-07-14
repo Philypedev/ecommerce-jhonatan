@@ -67,8 +67,11 @@ model Product {
   packageContent  String                  @default("") // JSON string array
   metaTitle       String?
   metaDescription String?
-  categoryId      String
-  category        Category                @relation(fields: [categoryId], references: [id])
+  // categoryId nullable: rascunho pode ser salvo sem categoria vinculada.
+  // Produto só é publicável (status ACTIVE) quando tem categoria — validação
+  // vive no Zod (superRefine) + no client.
+  categoryId      String?
+  category        Category?               @relation(fields: [categoryId], references: [id])
   images          ProductImage[]
   specifications  ProductSpecification[]
   faq             ProductFAQ[]

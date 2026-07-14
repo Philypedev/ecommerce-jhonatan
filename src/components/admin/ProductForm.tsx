@@ -15,6 +15,34 @@ type Props = {
   initial?: Partial<ProductInput>;
   categories: CategoryOption[];
   saved?: boolean;
+  /**
+   * Vem do query param `?as=`. Diferencia mensagem de sucesso entre rascunho
+   * salvo vs produto publicado. `undefined` (compat) cai no genérico.
+   */
+  savedAs?: 'draft' | 'active' | 'inactive';
+};
+
+/**
+ * Normaliza input decimal digitado no browser:
+ *  - troca vírgula por ponto
+ *  - remove caracteres não-numéricos (exceto ponto)
+ *  - permite só um ponto decimal
+ *  - remove zeros à esquerda ("0333" → "333", "00" → "0", "00,50" → "0.50")
+ *
+ * Retorna a string normalizada (para exibir de volta no input) e o número.
+ */
+const normalizeDecimalInput = (raw: string): { display: string; value: number } => {
+  let s = raw.replace(/,/g, '.').replace(/[^0-9.]/g, '');
+  const firstDot = s.indexOf('.');
+  if (firstDot !== -1) {
+    s = s.slice(0, firstDot + 1) + s.slice(firstDot + 1).replace(/\./g, '');
+  }
+  // Strip leading zeros mas preserva "0", "0.xxx" e string vazia
+  if (s.length > 1 && s.startsWith('0') && s[1] !== '.') {
+    s = s.replace(/^0+/, '') || '0';
+  }
+  const num = s === '' || s === '.' ? 0 : Number(s);
+  return { display: s, value: Number.isFinite(num) ? num : 0 };
 };
 
 const defaultData: ProductInput = {
@@ -105,7 +133,13 @@ const regenerateVariants = (
 const SEO_TITLE_IDEAL: [number, number] = [50, 60];
 const SEO_DESC_IDEAL: [number, number] = [140, 160];
 
-export const ProductForm = ({ productId, initial, categories, saved }: Props) => {
+export const ProductForm = ({
+  productId,
+  initial,
+  categories,
+  saved,
+  savedAs,
+}: Props) => {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -122,6 +156,16 @@ export const ProductForm = ({ productId, initial, categories, saved }: Props) =>
     variantOptions: initial?.variantOptions ?? [],
     variants: initial?.variants ?? [],
   });
+
+  // Preço e preço-antigo: mantemos a string "visível" no input separada do
+  // número gravado no state. Isso preserva o cursor e permite normalizar
+  // (strip zeros à esquerda, aceitar vírgula) sem lutar contra o React.
+  const [priceInput, setPriceInput] = useState<string>(
+    () => (initial?.price != null && initial.price > 0 ? String(initial.price) : ''),
+  );
+  const [oldPriceInput, setOldPriceInput] = useState<string>(
+    () => (initial?.oldPrice != null ? String(initial.oldPrice) : ''),
+  );
 
   // Ligado automaticamente quando o produto já tem opções salvas
   const [variationsEnabled, setVariationsEnabled] = useState(
@@ -167,12 +211,30 @@ export const ProductForm = ({ productId, initial, categories, saved }: Props) =>
   const submit = (e: React.FormEvent, forceStatus?: ProductInput['status']) => {
     e.preventDefault();
     setError(null);
-    // Se o toggle está OFF, mandamos arrays vazios (produto simples).
-    // Ligado, enviamos o que está em memória — o backend regenera title/sku
-    // e valida coerência via normalizeVariations.
+    const targetStatus = forceStatus ?? data.status;
+
+    // Validação client-side alinhada com a superRefine do Zod: só bloqueia
+    // envio quando o alvo é ACTIVE. Rascunho/inativo sempre passam.
+    if (targetStatus === 'ACTIVE') {
+      const missing: string[] = [];
+      if (!data.name.trim() || data.name.trim().length < 2) missing.push('nome');
+      if (!data.sku.trim()) missing.push('SKU');
+      if (!data.categoryId) missing.push('coleção');
+      if (!data.price || data.price <= 0) missing.push('preço');
+      if (missing.length > 0) {
+        setError(
+          `Para publicar, preencha: ${missing.join(', ')}. Você pode salvar como rascunho enquanto termina.`,
+        );
+        return;
+      }
+    }
+
+    // Se o toggle de variações está OFF, mandamos arrays vazios (produto
+    // simples). Ligado, enviamos o que está em memória — o backend regenera
+    // title/sku e valida coerência via normalizeVariations.
     const payload: ProductInput = {
       ...data,
-      status: forceStatus ?? data.status,
+      status: targetStatus,
       variantOptions: variationsEnabled ? data.variantOptions : [],
       variants: variationsEnabled ? data.variants : [],
     };
@@ -193,14 +255,26 @@ export const ProductForm = ({ productId, initial, categories, saved }: Props) =>
     ? Math.round(((data.oldPrice! - data.price) / data.oldPrice!) * 100)
     : 0;
 
-  const missingBasics =
-    !data.name.trim() || !data.sku.trim() || !data.categoryId || data.price <= 0;
+  // Só mostra o aviso "Preencha X para publicar" quando o admin JÁ escolheu
+  // ACTIVE. Rascunho/inativo não precisam de nada.
+  const missingForPublish =
+    data.status === 'ACTIVE' &&
+    (!data.name.trim() ||
+      !data.sku.trim() ||
+      !data.categoryId ||
+      data.price <= 0);
 
   return (
-    <form onSubmit={(e) => submit(e)} className="space-y-6">
+    <form onSubmit={(e) => submit(e)} className="space-y-6" noValidate>
       {saved && (
         <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
-          Produto salvo com sucesso.
+          {savedAs === 'draft'
+            ? 'Rascunho salvo com sucesso.'
+            : savedAs === 'inactive'
+              ? 'Produto salvo como inativo.'
+              : savedAs === 'active'
+                ? 'Produto publicado com sucesso.'
+                : 'Produto salvo com sucesso.'}
         </div>
       )}
 
@@ -221,9 +295,12 @@ export const ProductForm = ({ productId, initial, categories, saved }: Props) =>
             icon={<InfoSvg />}
           >
             <div className="grid gap-4">
-              <Field label="Nome do produto" required>
+              <Field
+                label="Nome do produto"
+                required
+                hint="Obrigatório para publicar. Rascunho pode ser salvo sem nome — vira &quot;Produto sem título&quot; automaticamente."
+              >
                 <input
-                  required
                   value={data.name}
                   onChange={(e) => handleName(e.target.value)}
                   placeholder="Ex.: Mala de bordo TravelPro 20"
@@ -252,10 +329,9 @@ export const ProductForm = ({ productId, initial, categories, saved }: Props) =>
                 <Field
                   label="SKU"
                   required
-                  hint="Código único usado no estoque e integrações."
+                  hint="Obrigatório para publicar. Rascunho recebe SKU temporário automático."
                 >
                   <input
-                    required
                     value={data.sku}
                     onChange={(e) => set('sku', e.target.value)}
                     placeholder="Ex.: TP-2024-BLK-20"
@@ -341,24 +417,40 @@ export const ProductForm = ({ productId, initial, categories, saved }: Props) =>
             <div className="grid gap-4 sm:grid-cols-4">
               <Field label="Preço (R$)" required>
                 <input
-                  type="number"
-                  step="0.01"
-                  min={0}
-                  required
-                  value={data.price}
-                  onChange={(e) => set('price', Number(e.target.value))}
+                  type="text"
+                  inputMode="decimal"
+                  autoComplete="off"
+                  value={priceInput}
+                  onChange={(e) => {
+                    const { display, value } = normalizeDecimalInput(e.target.value);
+                    setPriceInput(display);
+                    set('price', value);
+                  }}
+                  placeholder="0,00"
                   className="field-input"
                 />
               </Field>
-              <Field label="Preço antigo (R$)" hint="Deixe vazio se não houver desconto.">
+              <Field
+                label="Preço antigo (R$)"
+                hint="Deixe vazio se não houver desconto."
+              >
                 <input
-                  type="number"
-                  step="0.01"
-                  min={0}
-                  value={data.oldPrice ?? ''}
-                  onChange={(e) =>
-                    set('oldPrice', e.target.value === '' ? null : Number(e.target.value))
-                  }
+                  type="text"
+                  inputMode="decimal"
+                  autoComplete="off"
+                  value={oldPriceInput}
+                  onChange={(e) => {
+                    // "" = sem preço antigo (null no banco)
+                    if (e.target.value.trim() === '') {
+                      setOldPriceInput('');
+                      set('oldPrice', null);
+                      return;
+                    }
+                    const { display, value } = normalizeDecimalInput(e.target.value);
+                    setOldPriceInput(display);
+                    set('oldPrice', value);
+                  }}
+                  placeholder="0,00"
                   className="field-input"
                 />
               </Field>
@@ -569,10 +661,14 @@ export const ProductForm = ({ productId, initial, categories, saved }: Props) =>
 
           <SidebarCard title="Organização">
             <div className="grid gap-3">
-              <Field label="Categoria" required compact>
+              <Field
+                label="Categoria"
+                required
+                compact
+                hint="Obrigatória para publicar."
+              >
                 <select
-                  required
-                  value={data.categoryId}
+                  value={data.categoryId ?? ''}
                   onChange={(e) => set('categoryId', e.target.value)}
                   className="field-input"
                 >
@@ -640,15 +736,16 @@ export const ProductForm = ({ productId, initial, categories, saved }: Props) =>
               />
             </dl>
 
-            {missingBasics && (
+            {missingForPublish && (
               <p className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-[11px] text-amber-800">
-                Preencha nome, SKU, categoria e preço para publicar.
+                Para publicar, preencha nome, SKU, categoria e preço. Enquanto
+                isso, você pode salvar como rascunho a qualquer momento.
               </p>
             )}
-            {data.status === 'ACTIVE' && !data.categoryId && (
-              <p className="mt-2 rounded-lg bg-rose-50 px-3 py-2 text-[11px] text-rose-800">
-                Este produto está marcado como ativo mas não tem coleção
-                vinculada — ele não aparecerá em nenhuma página da loja.
+            {data.status === 'DRAFT' && (
+              <p className="mt-3 rounded-lg bg-ink-100/60 px-3 py-2 text-[11px] text-ink-700">
+                Rascunho: pode ser salvo mesmo sem preço, SKU ou categoria — o
+                produto não aparece na loja até você mudar para &ldquo;Ativo&rdquo;.
               </p>
             )}
           </SidebarCard>
@@ -666,16 +763,18 @@ export const ProductForm = ({ productId, initial, categories, saved }: Props) =>
                   : 'Criar produto'}
             </button>
 
-            {!productId && (
-              <button
-                type="button"
-                disabled={pending}
-                onClick={(e) => submit(e, 'DRAFT')}
-                className="btn-outline w-full"
-              >
-                Salvar como rascunho
-              </button>
-            )}
+            {/* Botão "Salvar como rascunho" sempre disponível — força status
+                DRAFT e ignora validação de publicação. Vale tanto pra novo
+                quanto pra edição (útil pra tirar produto do ar sem perder
+                dados). */}
+            <button
+              type="button"
+              disabled={pending}
+              onClick={(e) => submit(e, 'DRAFT')}
+              className="btn-outline w-full"
+            >
+              Salvar como rascunho
+            </button>
 
             <button
               type="button"

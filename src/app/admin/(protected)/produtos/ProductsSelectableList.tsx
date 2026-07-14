@@ -251,7 +251,7 @@ export const ProductsSelectableList = ({ products }: { products: ProductRowData[
                       </div>
                     </div>
                   </td>
-                  <td className="px-4 py-3 text-ink-700">{p.categoryName}</td>
+                  <td className="px-4 py-3 text-ink-700">{p.categoryName || <span className="text-ink-500">— sem coleção</span>}</td>
                   <td className="px-4 py-3"><PriceCell price={p.price} oldPrice={p.oldPrice} /></td>
                   <td className="px-4 py-3"><StockCell stock={p.stock} /></td>
                   <td className="px-4 py-3"><VisibilityCell product={p} /></td>
@@ -288,7 +288,7 @@ export const ProductsSelectableList = ({ products }: { products: ProductRowData[
                 <div className="min-w-0 flex-1">
                   <p className="line-clamp-2 font-medium text-ink-900">{p.name}</p>
                   <p className="text-xs text-ink-500">SKU {p.sku}</p>
-                  <p className="mt-0.5 text-[11px] text-ink-500">{p.categoryName}</p>
+                  <p className="mt-0.5 text-[11px] text-ink-500">{p.categoryName || <span className="text-ink-500">— sem coleção</span>}</p>
                 </div>
               </div>
               <div className="mt-3 flex items-center justify-between">
