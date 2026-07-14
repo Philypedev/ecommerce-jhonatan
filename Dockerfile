@@ -6,6 +6,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends openssl ca-cert
   && rm -rf /var/lib/apt/lists/*
 
 COPY package.json package-lock.json ./
+COPY prisma ./prisma
+
 RUN npm ci
 
 
@@ -19,26 +21,19 @@ RUN apt-get update && apt-get install -y --no-install-recommends openssl ca-cert
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
-ARG NODE_ENV=production
-ARG PORT=3100
-ARG NEXT_PUBLIC_SITE_URL
-ARG DATABASE_URL=file:/var/lib/traveltech/prod.db
-ARG AUTH_SECRET
-ARG CLOUDINARY_CLOUD_NAME
-ARG CLOUDINARY_API_KEY
-ARG CLOUDINARY_API_SECRET
+ENV NODE_ENV=production
+ENV NEXT_TELEMETRY_DISABLED=1
 
-ENV NODE_ENV=$NODE_ENV
-ENV PORT=$PORT
-ENV NEXT_PUBLIC_SITE_URL=$NEXT_PUBLIC_SITE_URL
-ENV DATABASE_URL=$DATABASE_URL
-ENV AUTH_SECRET=$AUTH_SECRET
-ENV CLOUDINARY_CLOUD_NAME=$CLOUDINARY_CLOUD_NAME
-ENV CLOUDINARY_API_KEY=$CLOUDINARY_API_KEY
-ENV CLOUDINARY_API_SECRET=$CLOUDINARY_API_SECRET
+# Variáveis falsas apenas para permitir build seguro.
+# Em produção, o EasyPanel injeta os valores reais no runtime.
+ENV DATABASE_URL=file:/tmp/traveltech-build.db
+ENV AUTH_SECRET=build-time-placeholder-not-used-in-runtime-1234567890abcdef
+ENV NEXT_PUBLIC_SITE_URL=https://traveltechb2b.com.br
+ENV CLOUDINARY_CLOUD_NAME=build_placeholder
+ENV CLOUDINARY_API_KEY=build_placeholder
+ENV CLOUDINARY_API_SECRET=build_placeholder
 
-RUN mkdir -p /var/lib/traveltech
-RUN npx prisma db push
+RUN npx prisma db push --skip-generate
 RUN npm run build
 
 
@@ -51,6 +46,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends openssl ca-cert
 
 ENV NODE_ENV=production
 ENV PORT=3100
+ENV NEXT_TELEMETRY_DISABLED=1
 
 COPY --from=builder /app/package.json ./package.json
 COPY --from=builder /app/package-lock.json ./package-lock.json
