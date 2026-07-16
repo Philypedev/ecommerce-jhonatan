@@ -44,10 +44,11 @@ export const HomeFeaturedCategoryForm = ({ categories, initial }: Props) => {
             Coleção da vitrine &quot;Novidades para sua viagem&quot;
           </h3>
           <p className="mt-1 text-xs text-ink-500">
-            Só produtos <strong>ativos</strong>, marcados como{' '}
-            <strong>&quot;Destacar na home&quot;</strong> e vinculados à coleção
-            escolhida aqui aparecem na vitrine. Sem coleção → a vitrine some
-            da home.
+            A vitrine prioriza produtos <strong>ativos</strong> desta coleção
+            marcados como <strong>&quot;Destacar na home&quot;</strong>. Se
+            faltarem, ela completa com publicados recentes desta coleção;
+            se ainda faltarem, com publicados recentes de qualquer coleção.
+            Nunca fica vazia enquanto houver produto ativo no catálogo.
           </p>
         </div>
       </div>

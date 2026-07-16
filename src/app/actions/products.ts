@@ -84,10 +84,21 @@ const normalizeVariations = (
   return { options, variants };
 };
 
+/**
+ * Invalida todos os caches públicos afetados por mudança em produto:
+ *   - home (vitrine + contagens)
+ *   - páginas de categoria (grid + paginação)
+ *   - PDPs (produto direto, JSON-LD, imagens)
+ *   - sitemap.xml (produtos ACTIVE entram/saem)
+ *   - página de busca (query dinâmica — força SSR fresh)
+ *   - admin de produtos (badge/count)
+ */
 const revalidateAll = () => {
-  revalidatePath('/');
+  revalidatePath('/', 'layout');
   revalidatePath('/categoria/[slug]', 'page');
   revalidatePath('/produto/[slug]', 'page');
+  revalidatePath('/sitemap.xml');
+  revalidatePath('/busca');
   revalidatePath('/admin/produtos');
 };
 

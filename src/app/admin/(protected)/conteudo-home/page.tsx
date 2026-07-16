@@ -208,7 +208,7 @@ export default async function AdminHomePage() {
         ? `${featuredProducts} produto${featuredProducts === 1 ? '' : 's'} destacado${featuredProducts === 1 ? '' : 's'} nesta coleção`
         : 'Nenhuma coleção escolhida para a vitrine',
       description:
-        'Só aparecem produtos ACTIVE + com "Destacar na home" marcado + vinculados à coleção configurada abaixo.',
+        'Prioridade: destacados da coleção configurada abaixo. Se não houver destacados suficientes, a vitrine completa com produtos publicados recentes — nunca fica vazia enquanto houver produto ACTIVE.',
       editHref: '/admin/produtos',
       editLabel: 'Ver produtos',
       inlineAnchor: '#vitrine-colecao',
@@ -253,19 +253,19 @@ export default async function AdminHomePage() {
   if (categoriesOnHome === 0) alerts.push({ tone: 'warning', title: 'Nenhuma coleção marcada para a home', description: 'Marque a flag "Exibir na home" nas coleções que devem aparecer em destaque.', href: '/admin/categorias', label: 'Selecionar coleções' });
   if (!featuredCategoryId) {
     alerts.push({
-      tone: 'warning',
-      title: 'Vitrine sem coleção configurada',
+      tone: 'info',
+      title: 'Vitrine sem coleção prioritária configurada',
       description:
-        'Escolha a coleção que alimenta a seção "Novidades para sua viagem" para que ela apareça na home.',
+        'Sem coleção escolhida, a vitrine mostra produtos publicados recentes de qualquer coleção. Escolher uma coleção prioritária dá destaque aos produtos dela.',
       href: '#vitrine-colecao',
       label: 'Escolher coleção',
     });
   } else if (featuredProducts === 0) {
     alerts.push({
-      tone: 'warning',
+      tone: 'info',
       title: 'Nenhum produto destacado nesta coleção',
       description:
-        'Marque "Destacar na home" em produtos ACTIVE dessa coleção para que apareçam na vitrine.',
+        'A vitrine ainda mostra produtos publicados recentes desta coleção como fallback. Marque "Destacar na home" nos produtos que você quer priorizar.',
       href: '/admin/produtos',
       label: 'Marcar destaques',
     });

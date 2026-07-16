@@ -93,19 +93,37 @@ export const normalizeCategoryPositions = async (
   }
 };
 
+/**
+ * Coleções ATIVAS que têm pelo menos 1 produto ACTIVE — usado como filtro
+ * complementar no menu/footer/home. Sem esse filtro, o admin marcar
+ * showInMenu=true numa coleção vazia deixaria o usuário clicar e cair em
+ * página sem produtos (UX ruim). O admin ainda vê a coleção normalmente
+ * em /admin/categorias com o badge "Sem produtos".
+ */
+const withActiveProducts = async (cats: Category[]): Promise<Category[]> => {
+  if (cats.length === 0) return cats;
+  const counts = await prisma.product.groupBy({
+    by: ['categoryId'],
+    where: { status: 'ACTIVE', categoryId: { in: cats.map((c) => c.id) } },
+    _count: { id: true },
+  });
+  const withProducts = new Set(counts.map((r) => r.categoryId!));
+  return cats.filter((c) => withProducts.has(c.id));
+};
+
 export const getMenuCategories = async (): Promise<Category[]> => {
   const all = await getPublicCategories();
-  return all.filter((c) => c.showInMenu);
+  return withActiveProducts(all.filter((c) => c.showInMenu));
 };
 
 export const getHomeCategories = async (): Promise<Category[]> => {
   const all = await getPublicCategories();
-  return all.filter((c) => c.showOnHome);
+  return withActiveProducts(all.filter((c) => c.showOnHome));
 };
 
 export const getFooterCategories = async (): Promise<Category[]> => {
   const all = await getPublicCategories();
-  return all.filter((c) => c.showInFooter);
+  return withActiveProducts(all.filter((c) => c.showInFooter));
 };
 
 export const getAllCategories = async (): Promise<Category[]> => {

@@ -9,8 +9,11 @@ import { slugify } from '@/lib/slug';
 import { normalizeCategoryPositions } from '@/lib/db/categories';
 
 const revalidateAll = () => {
-  revalidatePath('/', 'layout'); // Header/Footer/Home dependem das categorias
+  // Header/Footer/home dependem de getMenu/Footer/HomeCategories — layout
+  // revalidation limpa isso; page revalidation dá conta das páginas de coleção.
+  revalidatePath('/', 'layout');
   revalidatePath('/categoria/[slug]', 'page');
+  revalidatePath('/sitemap.xml');
   revalidatePath('/admin/categorias');
 };
 
