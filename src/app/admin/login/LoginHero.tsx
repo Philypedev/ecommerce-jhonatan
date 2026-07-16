@@ -98,13 +98,18 @@ export const LoginHero = ({
             className="h-10 w-auto max-w-[160px] object-contain"
           />
         ) : (
+          // Fallback padrão: símbolo oficial TravelTech (PNG). Caixa branca
+          // discreta dá contraste sobre o brand-950 do hero.
           <span
             aria-hidden
-            className="grid h-10 w-10 place-items-center rounded-xl bg-white/10 ring-1 ring-white/20 backdrop-blur"
+            className="grid h-10 w-10 place-items-center rounded-xl bg-white/95 ring-1 ring-white/20 backdrop-blur"
           >
-            <span className="text-sm font-black tracking-tight text-white">
-              {storeName.slice(0, 1).toUpperCase()}
-            </span>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src="/traveltech-mark.png"
+              alt={storeName}
+              className="h-8 w-8 object-contain"
+            />
           </span>
         )}
         <div className="min-w-0">

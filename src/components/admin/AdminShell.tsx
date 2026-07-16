@@ -84,10 +84,16 @@ const BrandMark = ({ shortName, logoUrl }: BrandInfo) => (
         />
       </span>
     ) : (
-      <span className="grid h-11 w-11 shrink-0 place-items-center rounded-md bg-brand-900 text-white">
-        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" aria-hidden>
-          <path d="M3 12h4l2-4 4 8 2-4h6" strokeLinecap="round" strokeLinejoin="round" />
-        </svg>
+      // Fallback padrão: símbolo oficial em /public/traveltech-mark.png.
+      <span className="relative h-11 w-11 shrink-0">
+        <Image
+          src="/traveltech-mark.png"
+          alt={shortName}
+          fill
+          sizes="44px"
+          className="object-contain"
+          priority
+        />
       </span>
     )}
     <span className="truncate text-base font-extrabold text-brand-900">

@@ -66,13 +66,14 @@ export default async function AdminLoginPage({
                 className="h-11 w-auto max-w-[150px] object-contain"
               />
             ) : (
-              <span
-                aria-hidden
-                className="grid h-11 w-11 place-items-center rounded-xl bg-gradient-to-br from-brand-900 to-brand-950 shadow-[0_6px_16px_-6px_rgba(0,115,150,0.55)] ring-1 ring-brand-950/40"
-              >
-                <span className="text-base font-black tracking-tight text-white">
-                  {storeName.slice(0, 1).toUpperCase()}
-                </span>
+              // Fallback padrão: símbolo oficial TravelTech (PNG).
+              <span aria-hidden className="relative h-11 w-11 shrink-0">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src="/traveltech-mark.png"
+                  alt={storeName}
+                  className="h-11 w-11 object-contain"
+                />
               </span>
             )}
             <div className="min-w-0">

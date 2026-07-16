@@ -61,20 +61,25 @@ export const generateMetadata = async (): Promise<Metadata> => {
       ? { verification: { google: settings.searchConsoleVerification.trim() } }
       : {}),
     robots: { index: true, follow: true },
-    // Favicons + PWA manifest — arquivos ficam em /public. O browser prioriza
+    // Favicons + PWA manifest — arquivos ficam em /public. Browser prioriza
     // SVG onde suporta (Chrome/Firefox/Safari modernos); .ico serve como
     // fallback em Windows/legado; apple-touch-icon vai pro iOS home screen.
     // Cobre tanto a loja pública quanto /admin (mesmo root layout).
+    //
+    // O sufixo `?v=4` força browsers/PWA a descartarem o favicon antigo
+    // cacheado (troca de arte da marca). Bumpar o número em cada regeração
+    // dos arquivos em /public.
     icons: {
       icon: [
-        { url: '/favicon.svg', type: 'image/svg+xml' },
-        { url: '/icon-192.png', type: 'image/png', sizes: '192x192' },
-        { url: '/icon-512.png', type: 'image/png', sizes: '512x512' },
+        { url: '/favicon.ico?v=4', sizes: 'any' },
+        { url: '/favicon.svg?v=4', type: 'image/svg+xml' },
+        { url: '/icon-192.png?v=4', type: 'image/png', sizes: '192x192' },
+        { url: '/icon-512.png?v=4', type: 'image/png', sizes: '512x512' },
       ],
-      shortcut: [{ url: '/favicon.ico' }],
-      apple: [{ url: '/apple-touch-icon.png', sizes: '180x180' }],
+      shortcut: [{ url: '/favicon.ico?v=4' }],
+      apple: [{ url: '/apple-touch-icon.png?v=4', sizes: '180x180' }],
     },
-    manifest: '/site.webmanifest',
+    manifest: '/site.webmanifest?v=4',
   };
 };
 
