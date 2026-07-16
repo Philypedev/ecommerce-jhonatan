@@ -17,6 +17,7 @@
     "db:import-dji-products": "tsx prisma/scripts/import-dji-products.ts",
     "db:import-dji-products:dry": "tsx prisma/scripts/import-dji-products.ts --dry-run",
     "admin:create-comercial": "tsx prisma/scripts/create-comercial-user.ts",
+    "admin:create-user": "tsx prisma/scripts/create-admin-user.ts",
     "postinstall": "prisma generate"
   },
   "dependencies": {
