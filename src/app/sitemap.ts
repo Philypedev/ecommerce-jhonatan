@@ -3,6 +3,15 @@ import { siteConfig as fallback } from '@/config/site';
 import { getActiveProducts } from '@/lib/db/products';
 import { getPublicCategories } from '@/lib/db/categories';
 
+// Sitemap é gerado dinamicamente e recacheado a cada 5min. Sem essa
+// configuração, o Next gera o XML no build usando /tmp/traveltech-build.db
+// (vazio) e nunca mais atualiza — categorias/produtos criados em
+// produção não entram no sitemap até um novo deploy. As Server Actions
+// de produto/categoria também chamam revalidatePath('/sitemap.xml')
+// para forçar refresh imediato após alterações.
+export const dynamic = 'force-dynamic';
+export const revalidate = 300;
+
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || fallback.url;
   const now = new Date();

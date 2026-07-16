@@ -11,8 +11,11 @@ import { normalizeCategoryPositions } from '@/lib/db/categories';
 const revalidateAll = () => {
   // Header/Footer/home dependem de getMenu/Footer/HomeCategories — layout
   // revalidation limpa isso; page revalidation dá conta das páginas de coleção.
+  // /busca também é invalidada porque o nome da categoria entra no índice
+  // de busca (`category.name.contains`).
   revalidatePath('/', 'layout');
   revalidatePath('/categoria/[slug]', 'page');
+  revalidatePath('/busca');
   revalidatePath('/sitemap.xml');
   revalidatePath('/admin/categorias');
 };

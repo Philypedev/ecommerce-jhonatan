@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { siteConfig } from '@/config/site';
-import { getProductBySlug, getActiveProducts, getRelatedProducts } from '@/lib/db/products';
+import { getProductBySlug, getRelatedProducts } from '@/lib/db/products';
 import { toLegacyProduct } from '@/lib/db/adapters';
 import { ProductInfoSection } from '@/components/product/ProductInfoSection';
 import { ProductBenefits } from '@/components/product/ProductBenefits';
@@ -12,14 +12,17 @@ import { RelatedProducts } from '@/components/product/RelatedProducts';
 import { ChevronRight } from '@/components/ui/Icon';
 import { EventTracker } from '@/components/analytics/EventTracker';
 
-export const revalidate = 60;
+// PDP é dinâmica por request. Sem `generateStaticParams` porque o build
+// roda com SQLite vazio em /tmp/traveltech-build.db — pré-gerar produziria
+// zero rotas e ainda deixaria PDPs cadastradas em prod dependendo de
+// on-demand com risco de cache preso. force-dynamic + revalidate=0
+// garante que status=DRAFT/INACTIVE nunca vaza (getProductBySlug filtra
+// status='ACTIVE') e produto recém-publicado no admin aparece na
+// próxima request, sem depender de revalidatePath.
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
 
 type Params = { slug: string };
-
-export async function generateStaticParams() {
-  const list = await getActiveProducts();
-  return list.map((p) => ({ slug: p.slug }));
-}
 
 export const generateMetadata = async ({
   params,
@@ -87,9 +90,6 @@ export default async function ProductPage({ params }: { params: Promise<Params> 
           content_type: 'product',
           currency: 'BRL',
           value: product.price,
-          // category pode ser null pra rascunho — só ACTIVE exige. Público
-          // acessa rascunho por slug direto (getProductBySlug não filtra por
-          // ACTIVE), então guardamos aqui.
           content_category: dbProduct.category?.name ?? '',
         }}
       />

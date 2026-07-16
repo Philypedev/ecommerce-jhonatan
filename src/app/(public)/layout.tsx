@@ -1,6 +1,6 @@
 import { siteConfig as fallbackConfig } from '@/config/site';
 import { getStoreSettings, settingsToSiteConfig } from '@/lib/db/settings';
-import { getPublicCategories } from '@/lib/db/categories';
+import { getFooterCategories, getMenuCategories } from '@/lib/db/categories';
 import { Header } from '@/components/layout/Header';
 import { Footer } from '@/components/layout/Footer';
 import { FloatingWhatsAppButton } from '@/components/layout/FloatingWhatsAppButton';
@@ -17,17 +17,17 @@ export default async function PublicLayout({ children }: { children: React.React
   let footerCats: CatLink[] = [];
 
   try {
-    const [settings, categories] = await Promise.all([
+    // getMenuCategories / getFooterCategories já filtram: categoria ACTIVE
+    // + flag correspondente + tem ao menos 1 produto ACTIVE dentro. Isso
+    // impede coleções vazias de aparecerem no menu/footer.
+    const [settings, menu, footer] = await Promise.all([
       getStoreSettings(),
-      getPublicCategories(),
+      getMenuCategories(),
+      getFooterCategories(),
     ]);
     runtime = settingsToSiteConfig(settings);
-    menuCats = categories
-      .filter((c) => c.showInMenu)
-      .map((c) => ({ slug: c.slug, name: c.name, highlight: c.highlight }));
-    footerCats = categories
-      .filter((c) => c.showInFooter)
-      .map((c) => ({ slug: c.slug, name: c.name }));
+    menuCats = menu.map((c) => ({ slug: c.slug, name: c.name, highlight: c.highlight }));
+    footerCats = footer.map((c) => ({ slug: c.slug, name: c.name }));
   } catch {
     runtime = {
       name: fallbackConfig.name,

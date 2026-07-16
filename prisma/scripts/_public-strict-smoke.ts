@@ -22,7 +22,11 @@ import {
   listCategoryProducts,
   searchProducts,
 } from '../../src/lib/db/products';
-import { getMenuCategories } from '../../src/lib/db/categories';
+import {
+  getFooterCategories,
+  getMenuCategories,
+} from '../../src/lib/db/categories';
+import sitemap from '../../src/app/sitemap';
 
 const p = new PrismaClient();
 const SLUG = '__smoke-strict-drone';
@@ -66,6 +70,12 @@ async function main() {
         position: 999,
       },
     });
+    // showInMenu / showInFooter vieram via db push sem generate; setamos via SQL.
+    await p.$executeRaw`
+      UPDATE "Category"
+      SET "showInMenu" = 1, "showInFooter" = 1, "showOnHome" = 1
+      WHERE "id" = ${cat.id}
+    `;
 
     await p.product.create({
       data: {
@@ -104,6 +114,16 @@ async function main() {
     let menu = await getMenuCategories();
     assert('Menu: coleção com ACTIVE aparece',
       menu.some((c) => c.slug === CAT_SLUG));
+
+    let footer = await getFooterCategories();
+    assert('Footer: coleção com ACTIVE aparece',
+      footer.some((c) => c.slug === CAT_SLUG));
+
+    let sitemapEntries = await sitemap();
+    assert('Sitemap: inclui URL da categoria',
+      sitemapEntries.some((e) => e.url.endsWith(`/categoria/${CAT_SLUG}`)));
+    assert('Sitemap: inclui URL do produto ACTIVE',
+      sitemapEntries.some((e) => e.url.endsWith(`/produto/${SLUG}`)));
 
     let pdp = await getProductBySlug(SLUG);
     assert('PDP: ACTIVE abre',
@@ -148,6 +168,14 @@ async function main() {
     menu = await getMenuCategories();
     assert('Menu: coleção sem ACTIVE some',
       !menu.some((c) => c.slug === CAT_SLUG));
+
+    footer = await getFooterCategories();
+    assert('Footer: coleção sem ACTIVE some',
+      !footer.some((c) => c.slug === CAT_SLUG));
+
+    sitemapEntries = await sitemap();
+    assert('Sitemap: NÃO inclui produto DRAFT',
+      !sitemapEntries.some((e) => e.url.endsWith(`/produto/${SLUG}`)));
 
     // ── FASE 4: sanidade — INACTIVE também nunca aparece ──
     console.log('\n── Fase 4: INACTIVE ──');

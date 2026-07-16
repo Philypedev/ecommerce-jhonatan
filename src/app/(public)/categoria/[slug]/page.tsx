@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import Link from 'next/link';
-import { getAllCategories, getCategoryBySlug } from '@/lib/db/categories';
+import { getCategoryBySlug } from '@/lib/db/categories';
 import {
   getBrandsInCategory,
   listCategoryProducts,
@@ -14,10 +14,15 @@ import { Pagination } from '@/components/product/Pagination';
 import { ChevronRight, SearchIcon } from '@/components/ui/Icon';
 import { siteConfig } from '@/config/site';
 
-// ISR: revalidação em background a cada 60s. Antes existia também um
-// `export const dynamic = 'force-dynamic'` que ANULAVA o ISR — toda visita
-// batia no banco. Removido pra devolver a página a categoria pro cache.
-export const revalidate = 60;
+// Renderização dinâmica por request. NÃO usamos `generateStaticParams`
+// porque o build roda com SQLite vazio em /tmp/traveltech-build.db (ver
+// Dockerfile) — pré-gerar aqui produziria uma lista fantasma e faria o
+// Next disparar DYNAMIC_SERVER_USAGE ao ler `searchParams` (filtros de
+// preço/marca/etc). Ao marcar force-dynamic + revalidate=0, cada visita
+// consulta o banco de produção e reflete instantaneamente qualquer
+// mudança feita no admin — nenhum cache preso ao build.
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
 
 type Params = { slug: string };
 type Search = {
@@ -30,11 +35,6 @@ type Search = {
   onlyFeatured?: string;
   page?: string;
 };
-
-export async function generateStaticParams() {
-  const cats = await getAllCategories();
-  return cats.map((c) => ({ slug: c.slug }));
-}
 
 export const generateMetadata = async ({
   params,
