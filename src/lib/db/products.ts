@@ -51,21 +51,21 @@ const attachOne = async (product: ProductWithRelations | null): Promise<void> =>
 };
 
 /**
- * Vitrine "Novidades para sua viagem" da home.
+ * Vitrine geral "Novidades para sua viagem" da home.
  *
- * REGRA ESTRITA — sem fallback. Só entram produtos que satisfazem TODAS
- * as condições:
- *   - `status = 'ACTIVE'` (publicação está ligada)
- *   - `featured = true` (checkbox "Destacar na home" está marcado)
+ * Comportamento Shopify-style: publicar um produto ACTIVE já o faz
+ * candidato à vitrine, sem exigir "Destacar na home". O checkbox
+ * `featured` só decide a ORDEM (destaques primeiro).
+ *
+ * Regras:
+ *   - `status = 'ACTIVE'` (obrigatório — DRAFT/INACTIVE nunca aparecem)
  *   - Se `featuredCategoryId` estiver preenchido em StoreSettings,
- *     também `categoryId = featuredCategoryId`.
+ *     também `categoryId = featuredCategoryId` (restrição opcional).
+ *   - Ordem: `featured DESC` (destaques no topo) → `updatedAt DESC`
+ *     (mais recentes em seguida).
  *
- * Nenhum fallback: se o admin não marcou nada como destaque, a vitrine
- * fica vazia e o `<FeaturedProducts>` retorna `null` (a seção some da
- * home). "Estar publicado" NÃO é sinônimo de "estar em destaque" — as
- * decisões são independentes por design.
- *
- * DRAFT/INACTIVE NUNCA aparecem.
+ * Home vazia só quando não houver NENHUM produto ACTIVE que satisfaça
+ * a restrição opcional de categoria.
  */
 export const getFeaturedProducts = async (
   featuredCategoryId: string | null,
@@ -74,10 +74,29 @@ export const getFeaturedProducts = async (
   const items = await prisma.product.findMany({
     where: {
       status: 'ACTIVE',
-      featured: true,
       ...(featuredCategoryId ? { categoryId: featuredCategoryId } : {}),
     },
-    orderBy: { updatedAt: 'desc' },
+    orderBy: [{ featured: 'desc' }, { updatedAt: 'desc' }],
+    take: limit,
+    include: fullInclude,
+  });
+  await attachValueImages(items);
+  return items;
+};
+
+/**
+ * Produtos ACTIVE de UMA coleção, para as seções Shopify-style da home
+ * (uma seção por coleção). Não filtra por `featured` — publicar já basta
+ * — mas coloca destaques primeiro para o admin conseguir "pinar" itens
+ * no topo de cada seção sem alterar `position` manualmente.
+ */
+export const getActiveProductsByCategoryId = async (
+  categoryId: string,
+  limit = 8,
+): Promise<ProductWithRelations[]> => {
+  const items = await prisma.product.findMany({
+    where: { status: 'ACTIVE', categoryId },
+    orderBy: [{ featured: 'desc' }, { updatedAt: 'desc' }],
     take: limit,
     include: fullInclude,
   });

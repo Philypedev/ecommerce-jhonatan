@@ -2,10 +2,11 @@ import { HomeHeroCarousel } from '@/components/home/HomeHeroCarousel';
 import { HeroCarouselFallback } from '@/components/home/HeroCarouselFallback';
 import { HomeBanners, type BannerData } from '@/components/home/HomeBanners';
 import { FeaturedProducts } from '@/components/home/FeaturedProducts';
+import { HomeCollectionsShowcase } from '@/components/home/HomeCollectionsShowcase';
 import { TrustSection } from '@/components/home/TrustSection';
 import { HowItWorks } from '@/components/home/HowItWorks';
 import { getStoreSettings } from '@/lib/db/settings';
-import { getPublicCategories } from '@/lib/db/categories';
+import { getHomeCollections, getPublicCategories } from '@/lib/db/categories';
 import { getFeaturedProducts } from '@/lib/db/products';
 import { getActiveBannersByPlacement, type BannerPlacement } from '@/lib/db/banners';
 import type { HomeBanner } from '@/lib/db/types';
@@ -33,16 +34,22 @@ const mapBanner = (b: HomeBanner): BannerData => ({
 
 export default async function HomePage() {
   // `cats` só é usado como fallback do CTA do carrossel — a home NÃO renderiza
-  // mais a seção de "Explore por categoria". A navegação por coleções vive no
-  // header/footer/páginas de categoria.
+  // mais a seção antiga de "Explore por categoria". A navegação por coleções
+  // vive no header/footer.
   //
-  // A vitrine "Novidades" é alimentada por UMA coleção específica escolhida
-  // pelo admin (StoreSettings.featuredCategoryId). Sem coleção configurada,
-  // getFeaturedProducts devolve [] e a seção some.
+  // A home tem DOIS canais de vitrine, complementares:
+  //  - `featured`: vitrine geral "Novidades para sua viagem" — produtos ACTIVE
+  //    (destaques primeiro). Opcionalmente restrita a uma coleção via
+  //    `settings.featuredCategoryId`.
+  //  - `homeCollections`: vitrines Shopify-style — uma seção por coleção
+  //    ACTIVE marcada "Exibir na home" com produto ACTIVE dentro.
+  // Publicar um produto já basta para aparecer em ambas: `featured=true` só
+  // decide a ORDEM (destaques primeiro dentro de cada vitrine).
   const settings = await getStoreSettings();
-  const [cats, featured, bannersByPlacement] = await Promise.all([
+  const [cats, featured, homeCollections, bannersByPlacement] = await Promise.all([
     getPublicCategories(),
     getFeaturedProducts(settings.featuredCategoryId ?? null, 8),
+    getHomeCollections(8),
     getActiveBannersByPlacement(),
   ]);
 
@@ -81,9 +88,20 @@ export default async function HomePage() {
 
       {bannerGroup('after_hero', 'Campanhas em destaque abaixo do carrossel')}
 
-      {/* Vitrine principal — produtos vêm direto após o carrossel. */}
+      {/* Vitrine geral — produtos vêm direto após o carrossel. */}
       <FeaturedProducts products={featured.map(toLegacyProduct)} />
       {bannerGroup('after_featured_products', 'Campanhas após os produtos em destaque')}
+
+      {/* Vitrines Shopify-style — uma seção por coleção ACTIVE marcada
+          "Exibir na home", povoada com os produtos ACTIVE da coleção. */}
+      <HomeCollectionsShowcase
+        collections={homeCollections.map((c) => ({
+          slug: c.category.slug,
+          name: c.category.name,
+          description: c.category.description,
+          products: c.products.map(toLegacyProduct),
+        }))}
+      />
 
       {/* Legado: os placements `after_trust_bar` e `after_featured_categories`
           ficavam ao redor da seção "Explore por categoria". Como essa seção

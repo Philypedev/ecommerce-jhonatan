@@ -1,5 +1,9 @@
 import { prisma } from '@/lib/prisma';
 import type { Category } from './types';
+import {
+  getActiveProductsByCategoryId,
+  type ProductWithRelations,
+} from './products';
 
 /**
  * O Prisma Client em runtime ignora colunas adicionadas via
@@ -119,6 +123,40 @@ export const getMenuCategories = async (): Promise<Category[]> => {
 export const getHomeCategories = async (): Promise<Category[]> => {
   const all = await getPublicCategories();
   return withActiveProducts(all.filter((c) => c.showOnHome));
+};
+
+export type HomeCollection = {
+  category: Category;
+  products: ProductWithRelations[];
+};
+
+/**
+ * Vitrines Shopify-style da home — uma por coleção. Devolve na ordem
+ * exata em que devem ser renderizadas: coleção ACTIVE + `showOnHome=true`
+ * + pelo menos 1 produto ACTIVE dentro, ordenadas por `position`. Cada
+ * item traz `products` (limit `perCollectionLimit`) já ordenados
+ * `featured DESC, updatedAt DESC` via getActiveProductsByCategoryId.
+ *
+ * Coleções vazias somem — nunca aparece card "Explorar Drones" sem
+ * produto pra clicar. Coleção `ofertas` entra normalmente se tiver
+ * produto vinculado (a página /categoria/ofertas ainda tem sua regra
+ * própria de "produto em oferta = oldPrice > price"; aqui usamos o
+ * `categoryId` como qualquer outra coleção).
+ */
+export const getHomeCollections = async (
+  perCollectionLimit = 8,
+): Promise<HomeCollection[]> => {
+  const all = await getPublicCategories();
+  const eligible = await withActiveProducts(all.filter((c) => c.showOnHome));
+  const enriched = await Promise.all(
+    eligible.map(async (category) => ({
+      category,
+      products: await getActiveProductsByCategoryId(category.id, perCollectionLimit),
+    })),
+  );
+  // withActiveProducts já garante ≥1 ACTIVE por coleção; defesa em
+  // profundidade caso o estado mude entre as duas queries.
+  return enriched.filter((c) => c.products.length > 0);
 };
 
 export const getFooterCategories = async (): Promise<Category[]> => {

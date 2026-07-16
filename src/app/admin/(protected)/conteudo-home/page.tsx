@@ -113,29 +113,26 @@ export default async function AdminHomePage() {
   const content = parseHomeContent(settings.homeContentJson);
   const allCategories = await getAllCategories();
 
-  // A vitrine "Novidades" só mostra produtos ACTIVE + featured E vinculados à
-  // coleção escolhida em settings.featuredCategoryId. O contador reflete
-  // exatamente essa regra para o card não mentir sobre quantos aparecem.
+  // A vitrine "Novidades" mostra produtos ACTIVE (Shopify-style — publicar
+  // basta). Se `featuredCategoryId` estiver configurado, restringe a esta
+  // coleção. O contador reflete essa regra para o card não mentir.
   const featuredCategoryId = settings.featuredCategoryId ?? null;
 
   // Contagens reais — todas do banco, nada de mock.
   const [
     activeRotatingMessages,
     categoriesOnHome,
-    featuredProducts,
+    activeProductsInVitrine,
     activeBanners,
   ] = await Promise.all([
     prisma.rotatingMessage.count({ where: { active: true } }),
     prisma.category.count({ where: { status: 'ACTIVE', showOnHome: true } }),
-    featuredCategoryId
-      ? prisma.product.count({
-          where: {
-            status: 'ACTIVE',
-            featured: true,
-            categoryId: featuredCategoryId,
-          },
-        })
-      : Promise.resolve(0),
+    prisma.product.count({
+      where: {
+        status: 'ACTIVE',
+        ...(featuredCategoryId ? { categoryId: featuredCategoryId } : {}),
+      },
+    }),
     prisma.homeBanner.count({ where: { active: true } }),
   ]);
 
@@ -149,7 +146,7 @@ export default async function AdminHomePage() {
 
   const rotatingStatus: SectionStatus = activeRotatingMessages > 0 ? 'ok' : 'pending';
   const categoriesStatus: SectionStatus = categoriesOnHome > 0 ? 'ok' : 'pending';
-  const productsStatus: SectionStatus = featuredProducts > 0 ? 'ok' : 'pending';
+  const productsStatus: SectionStatus = activeProductsInVitrine > 0 ? 'ok' : 'pending';
   const bannersStatus: SectionStatus = activeBanners > 0 ? 'ok' : 'default';
 
   const heroBadgesStatus: SectionStatus =
@@ -201,14 +198,14 @@ export default async function AdminHomePage() {
       editLabel: 'Gerenciar coleções',
     },
     {
-      name: 'Produtos em destaque',
-      type: 'Vitrine principal',
+      name: 'Vitrine "Novidades"',
+      type: 'Vitrine geral',
       status: productsStatus,
       metric: featuredCategoryId
-        ? `${featuredProducts} produto${featuredProducts === 1 ? '' : 's'} destacado${featuredProducts === 1 ? '' : 's'} nesta coleção`
-        : 'Nenhuma coleção escolhida para a vitrine',
+        ? `${activeProductsInVitrine} produto${activeProductsInVitrine === 1 ? '' : 's'} ativo${activeProductsInVitrine === 1 ? '' : 's'} nesta coleção`
+        : `${activeProductsInVitrine} produto${activeProductsInVitrine === 1 ? '' : 's'} ativo${activeProductsInVitrine === 1 ? '' : 's'} candidato${activeProductsInVitrine === 1 ? '' : 's'}`,
       description:
-        'Só aparecem produtos ACTIVE com "Destacar na home" marcado. Se uma coleção estiver configurada abaixo, o produto também precisa pertencer a ela. Sem destaques marcados, a seção não aparece na home.',
+        'Aparecem produtos ACTIVE (marcar "Destacar na home" não é obrigatório — só prioriza a ordem). Se uma coleção estiver configurada abaixo, a vitrine se restringe a ela. Além dessa vitrine, coleções com "Exibir na home" ganham a sua própria seção na página inicial.',
       editHref: '/admin/produtos',
       editLabel: 'Ver produtos',
       inlineAnchor: '#vitrine-colecao',
@@ -251,23 +248,23 @@ export default async function AdminHomePage() {
   if (!heroTitleReal) alerts.push({ tone: 'info', title: 'Texto do hero ainda é o padrão', description: 'Personalize o título principal para refletir o tom da sua loja.', href: '/admin/personalizacao#hero', label: 'Editar texto' });
   if (activeRotatingMessages === 0) alerts.push({ tone: 'warning', title: 'Faixa rotativa sem mensagens ativas', description: 'A barra superior aparece vazia. Cadastre ao menos 1 mensagem.', href: '/admin/personalizacao#mensagens', label: 'Adicionar mensagem' });
   if (categoriesOnHome === 0) alerts.push({ tone: 'warning', title: 'Nenhuma coleção marcada para a home', description: 'Marque a flag "Exibir na home" nas coleções que devem aparecer em destaque.', href: '/admin/categorias', label: 'Selecionar coleções' });
-  if (!featuredCategoryId && featuredProducts === 0) {
+  if (!featuredCategoryId && activeProductsInVitrine === 0) {
     alerts.push({
       tone: 'warning',
-      title: 'Nenhum produto destacado — vitrine oculta na home',
+      title: 'Nenhum produto ACTIVE cadastrado',
       description:
-        'Marque "Destacar na home" em produtos ACTIVE para preencher a vitrine. Opcionalmente, escolha uma coleção abaixo para limitar o destaque a ela.',
+        'A vitrine "Novidades" fica vazia enquanto não houver produtos publicados. Publique um produto ativo para aparecer na home.',
       href: '/admin/produtos',
-      label: 'Marcar destaques',
+      label: 'Cadastrar produto',
     });
-  } else if (featuredProducts === 0) {
+  } else if (activeProductsInVitrine === 0) {
     alerts.push({
       tone: 'warning',
-      title: 'Nenhum produto destacado nesta coleção',
+      title: 'Nenhum produto ACTIVE nesta coleção',
       description:
-        'Marque "Destacar na home" em produtos ACTIVE desta coleção para que apareçam na vitrine. Enquanto isso, a seção fica oculta.',
+        'A vitrine "Novidades" está restrita a uma coleção sem produtos ACTIVE. Publique produtos nesta coleção ou remova a restrição abaixo.',
       href: '/admin/produtos',
-      label: 'Marcar destaques',
+      label: 'Ver produtos',
     });
   }
   if (activeBanners === 0) alerts.push({ tone: 'info', title: 'Nenhum banner promocional ativo', description: 'Banners não são obrigatórios, mas ajudam a divulgar campanhas. Adicione um para reforçar uma oferta.', href: '/admin/banners', label: 'Criar banner' });

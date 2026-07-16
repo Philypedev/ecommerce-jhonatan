@@ -653,7 +653,7 @@ export const ProductForm = ({
               <div className="flex-1">
                 <p className="font-semibold text-ink-900">Destacar na home</p>
                 <p className="text-[11px] text-ink-500">
-                  Exibe este produto na seção Novidades da página inicial.
+                  Prioriza este produto nas vitrines da página inicial.
                 </p>
               </div>
             </label>

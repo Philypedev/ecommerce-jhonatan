@@ -1,19 +1,25 @@
 /**
- * Smoke suite: regra estrita da vitrine + páginas públicas.
+ * Smoke suite Shopify-style: home povoada automaticamente por coleções
+ * ativas com produto ACTIVE dentro. `featured=true` só prioriza ordem.
  *
- * Segue o script de teste do briefing:
- *   Produto ACTIVE em Drones, featured=false:
- *     - NÃO aparece na home
- *     - aparece em /categoria/drones
- *     - aparece na busca
- *   featured=true:
- *     - aparece na home
- *     - continua na categoria/busca
- *   status=DRAFT:
- *     - some da home
- *     - some da categoria
- *     - some da busca
- *     - PDP direta não abre
+ * Cenários do briefing:
+ *   A) Coleção ACTIVE + produto ACTIVE featured=false
+ *      - APARECE na vitrine geral "Novidades"
+ *      - APARECE na seção Shopify-style da coleção na home
+ *      - APARECE em /categoria/drones
+ *      - APARECE na busca
+ *      - APARECE no menu público
+ *   B) Mesmo produto com featured=true
+ *      - continua tudo, e vem ANTES de um produto não-destacado da
+ *        mesma coleção
+ *   C) Produto muda para DRAFT
+ *      - some da home (vitrine + seção)
+ *      - some da categoria
+ *      - some da busca
+ *      - PDP direta 404
+ *   D) Coleção ACTIVE sem produto ACTIVE
+ *      - não aparece na home
+ *      - não aparece no menu público
  */
 import { PrismaClient } from '@prisma/client';
 import {
@@ -24,12 +30,14 @@ import {
 } from '../../src/lib/db/products';
 import {
   getFooterCategories,
+  getHomeCollections,
   getMenuCategories,
 } from '../../src/lib/db/categories';
 import sitemap from '../../src/app/sitemap';
 
 const p = new PrismaClient();
 const SLUG = '__smoke-strict-drone';
+const SECOND_SLUG = '__smoke-strict-drone-2';
 const CAT_SLUG = '__smoke-strict-drones';
 
 async function cleanup() {
@@ -40,8 +48,8 @@ async function cleanup() {
 let pass = 0;
 let fail = 0;
 function assert(name: string, cond: boolean, detail?: string) {
-  if (cond) { pass++; console.log(`✅ ${name}`); }
-  else { fail++; console.log(`❌ ${name}${detail ? `\n   → ${detail}` : ''}`); }
+  if (cond) { pass++; console.log(`OK  ${name}`); }
+  else { fail++; console.log(`FAIL ${name}${detail ? `\n     -> ${detail}` : ''}`); }
 }
 
 async function main() {
@@ -53,8 +61,8 @@ async function main() {
   try {
     await cleanup();
 
-    // Sem restrição de coleção (featuredCategoryId=null) — smoke roda contra
-    // a regra global "featured=true" mesmo se ambiente tiver coleção real.
+    // Sem restrição de coleção — a vitrine geral puxa de qualquer coleção
+    // ativa, que é o comportamento default esperado após publicação.
     await p.storeSettings.update({
       where: { id: 'singleton' },
       data: { featuredCategoryId: null },
@@ -64,13 +72,12 @@ async function main() {
       data: {
         name: 'Smoke Drones',
         slug: CAT_SLUG,
-        description: '',
+        description: 'coleção de smoke',
         icon: 'tag',
         status: 'ACTIVE',
         position: 999,
       },
     });
-    // showInMenu / showInFooter vieram via db push sem generate; setamos via SQL.
     await p.$executeRaw`
       UPDATE "Category"
       SET "showInMenu" = 1, "showInFooter" = 1, "showOnHome" = 1
@@ -92,12 +99,18 @@ async function main() {
       },
     });
 
-    // ── FASE 1: ACTIVE + featured=false ──
-    console.log('\n── Fase 1: ACTIVE + featured=false ──');
+    // ── Cenário A: ACTIVE + featured=false ──
+    console.log('\n-- Cenario A: ACTIVE + featured=false --');
     let home = await getFeaturedProducts(null, 50);
-    assert('Home: NÃO aparece produto sem featured',
-      !home.some((x) => x.slug === SLUG),
-      `retornados smoke: ${home.filter((x) => x.slug.startsWith('__smoke-strict-')).map((x) => x.slug).join(', ')}`);
+    assert('Home (vitrine geral): APARECE mesmo sem featured',
+      home.some((x) => x.slug === SLUG));
+
+    let showcase = await getHomeCollections(50);
+    const showcaseCat = showcase.find((c) => c.category.slug === CAT_SLUG);
+    assert('Home (showcase): secao da colecao existe',
+      Boolean(showcaseCat));
+    assert('Home (showcase): produto aparece na secao da colecao',
+      Boolean(showcaseCat?.products.some((x) => x.slug === SLUG)));
 
     let catList = await listCategoryProducts(CAT_SLUG, { pageSize: 50 });
     assert('Categoria: APARECE produto ACTIVE mesmo sem featured',
@@ -112,11 +125,11 @@ async function main() {
       searchDji.some((x) => x.slug === SLUG));
 
     let menu = await getMenuCategories();
-    assert('Menu: coleção com ACTIVE aparece',
+    assert('Menu: colecao com ACTIVE aparece',
       menu.some((c) => c.slug === CAT_SLUG));
 
     let footer = await getFooterCategories();
-    assert('Footer: coleção com ACTIVE aparece',
+    assert('Footer: colecao com ACTIVE aparece',
       footer.some((c) => c.slug === CAT_SLUG));
 
     let sitemapEntries = await sitemap();
@@ -126,16 +139,50 @@ async function main() {
       sitemapEntries.some((e) => e.url.endsWith(`/produto/${SLUG}`)));
 
     let pdp = await getProductBySlug(SLUG);
-    assert('PDP: ACTIVE abre',
-      pdp?.slug === SLUG);
+    assert('PDP: ACTIVE abre', pdp?.slug === SLUG);
 
-    // ── FASE 2: marcar featured=true ──
-    console.log('\n── Fase 2: featured=true ──');
+    // ── Cenário B: featured=true prioriza ordem ──
+    console.log('\n-- Cenario B: featured=true prioriza ordem --');
+    // Cria segundo produto ACTIVE sem featured e MAIS recente para provar
+    // que sem featured=true no primeiro, este segundo estaria na frente.
+    await p.product.create({
+      data: {
+        name: 'Drone Smoke Air Lite',
+        slug: SECOND_SLUG,
+        sku: 'SMK-STRICT-2',
+        price: 2990,
+        installments: 1,
+        brand: 'DJI',
+        stock: 3,
+        status: 'ACTIVE',
+        featured: false,
+        categoryId: cat.id,
+      },
+    });
+    // Sanidade — sem featured no primeiro, o segundo (mais recente) fica antes.
+    home = await getFeaturedProducts(null, 50);
+    const idxA = home.findIndex((x) => x.slug === SLUG);
+    const idxB = home.findIndex((x) => x.slug === SECOND_SLUG);
+    assert('Home (vitrine): sem featured, mais recente fica antes (sanidade)',
+      idxA > idxB && idxB >= 0);
+
+    // Marca featured=true no PRIMEIRO — ele deve pular para frente.
     await p.product.update({ where: { slug: SLUG }, data: { featured: true } });
 
     home = await getFeaturedProducts(null, 50);
-    assert('Home: APARECE agora que featured=true',
-      home.some((x) => x.slug === SLUG));
+    const idxAfterA = home.findIndex((x) => x.slug === SLUG);
+    const idxAfterB = home.findIndex((x) => x.slug === SECOND_SLUG);
+    assert('Home (vitrine): featured=true vem ANTES do nao-destacado',
+      idxAfterA >= 0 && idxAfterA < idxAfterB,
+      `idxA=${idxAfterA} idxB=${idxAfterB}`);
+
+    showcase = await getHomeCollections(50);
+    const showcaseCatB = showcase.find((c) => c.category.slug === CAT_SLUG);
+    const shIdxA = showcaseCatB?.products.findIndex((x) => x.slug === SLUG) ?? -1;
+    const shIdxB = showcaseCatB?.products.findIndex((x) => x.slug === SECOND_SLUG) ?? -1;
+    assert('Home (showcase): featured=true vem ANTES na secao da colecao',
+      shIdxA >= 0 && shIdxA < shIdxB,
+      `shIdxA=${shIdxA} shIdxB=${shIdxB}`);
 
     catList = await listCategoryProducts(CAT_SLUG, { pageSize: 50 });
     assert('Categoria: continua aparecendo',
@@ -145,13 +192,18 @@ async function main() {
     assert('Busca: continua em "drone"',
       searchDrone.some((x) => x.slug === SLUG));
 
-    // ── FASE 3: mudar para DRAFT ──
-    console.log('\n── Fase 3: status=DRAFT ──');
+    // ── Cenário C: DRAFT ──
+    console.log('\n-- Cenario C: DRAFT --');
     await p.product.update({ where: { slug: SLUG }, data: { status: 'DRAFT' } });
 
     home = await getFeaturedProducts(null, 50);
-    assert('Home: SOME quando DRAFT',
+    assert('Home (vitrine): SOME quando DRAFT',
       !home.some((x) => x.slug === SLUG));
+
+    showcase = await getHomeCollections(50);
+    const showcaseCatC = showcase.find((c) => c.category.slug === CAT_SLUG);
+    assert('Home (showcase): produto DRAFT some da secao',
+      !showcaseCatC?.products.some((x) => x.slug === SLUG));
 
     catList = await listCategoryProducts(CAT_SLUG, { pageSize: 50 });
     assert('Categoria: SOME quando DRAFT',
@@ -162,33 +214,41 @@ async function main() {
       !searchDrone.some((x) => x.slug === SLUG));
 
     pdp = await getProductBySlug(SLUG);
-    assert('PDP: DRAFT NÃO abre publicamente',
-      pdp === null);
+    assert('PDP: DRAFT NAO abre publicamente', pdp === null);
+
+    sitemapEntries = await sitemap();
+    assert('Sitemap: NAO inclui produto DRAFT',
+      !sitemapEntries.some((e) => e.url.endsWith(`/produto/${SLUG}`)));
+
+    // ── Cenário D: coleção ACTIVE sem produto ACTIVE ──
+    console.log('\n-- Cenario D: colecao sem produto ACTIVE --');
+    // Muda o segundo (unico ACTIVE restante) para DRAFT — coleção fica sem
+    // nenhum produto ACTIVE dentro.
+    await p.product.update({ where: { slug: SECOND_SLUG }, data: { status: 'DRAFT' } });
+
+    showcase = await getHomeCollections(50);
+    assert('Home (showcase): colecao sem ACTIVE SOME',
+      !showcase.some((c) => c.category.slug === CAT_SLUG));
 
     menu = await getMenuCategories();
-    assert('Menu: coleção sem ACTIVE some',
+    assert('Menu: colecao sem ACTIVE some',
       !menu.some((c) => c.slug === CAT_SLUG));
 
     footer = await getFooterCategories();
-    assert('Footer: coleção sem ACTIVE some',
+    assert('Footer: colecao sem ACTIVE some',
       !footer.some((c) => c.slug === CAT_SLUG));
 
-    sitemapEntries = await sitemap();
-    assert('Sitemap: NÃO inclui produto DRAFT',
-      !sitemapEntries.some((e) => e.url.endsWith(`/produto/${SLUG}`)));
-
-    // ── FASE 4: sanidade — INACTIVE também nunca aparece ──
-    console.log('\n── Fase 4: INACTIVE ──');
-    await p.product.update({ where: { slug: SLUG }, data: { status: 'INACTIVE', featured: true } });
-
+    // ── Sanidade: INACTIVE nunca vaza ──
+    console.log('\n-- Sanidade: INACTIVE --');
+    await p.product.update({
+      where: { slug: SLUG },
+      data: { status: 'INACTIVE', featured: true },
+    });
     home = await getFeaturedProducts(null, 50);
-    assert('Home: INACTIVE nunca aparece nem com featured=true',
+    assert('Home (vitrine): INACTIVE nunca aparece nem com featured=true',
       !home.some((x) => x.slug === SLUG));
-
     pdp = await getProductBySlug(SLUG);
-    assert('PDP: INACTIVE nunca abre',
-      pdp === null);
-
+    assert('PDP: INACTIVE nunca abre', pdp === null);
   } finally {
     await cleanup();
     await p.storeSettings.update({

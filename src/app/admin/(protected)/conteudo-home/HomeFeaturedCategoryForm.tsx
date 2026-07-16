@@ -11,9 +11,11 @@ type Props = {
 };
 
 /**
- * Escolha da coleção que alimenta a vitrine "Novidades para sua viagem".
- * Server-side: apenas produtos ACTIVE + featured + categoryId dessa coleção
- * aparecem. Sem seleção (opção vazia) → vitrine some da home.
+ * Escolha da coleção que restringe a vitrine geral "Novidades para sua
+ * viagem". Sem seleção (opção vazia) → a vitrine mostra qualquer produto
+ * ACTIVE. Com seleção → só produtos ACTIVE dessa coleção entram na
+ * vitrine geral (as vitrines Shopify-style de cada coleção seguem
+ * funcionando independentemente).
  */
 export const HomeFeaturedCategoryForm = ({ categories, initial }: Props) => {
   const [value, setValue] = useState<string>(initial ?? '');
@@ -44,11 +46,11 @@ export const HomeFeaturedCategoryForm = ({ categories, initial }: Props) => {
             Coleção da vitrine &quot;Novidades para sua viagem&quot;
           </h3>
           <p className="mt-1 text-xs text-ink-500">
-            A vitrine mostra apenas produtos <strong>ativos</strong> com
-            <strong> &quot;Destacar na home&quot;</strong> marcado.
-            Se você escolher uma coleção aqui, o destaque também precisa
-            pertencer a ela. Sem destaques cadastrados, a seção não
-            aparece na home.
+            A vitrine mostra produtos <strong>ativos</strong> — publicar
+            já basta. O checkbox <strong>&quot;Destacar na home&quot;</strong>{' '}
+            no produto só decide a ordem (destaques primeiro). Escolha
+            uma coleção aqui apenas se quiser restringir a vitrine a ela;
+            sem seleção, a vitrine puxa de qualquer coleção ativa.
           </p>
         </div>
       </div>
