@@ -187,22 +187,27 @@ export const Header = ({ config, categories }: Props) => {
 
       {mobileOpen && (
         <div
-          className="fixed inset-0 z-[60] lg:hidden"
+          className="fixed inset-0 z-[60] h-[100dvh] lg:hidden"
           role="dialog"
           aria-modal="true"
           aria-label="Menu principal"
         >
-          {/* Overlay escuro — clique fora fecha */}
+          {/* Overlay escuro — clique fora fecha. h-[100dvh] no PARENT garante
+              que ele cobre TODA a tela mesmo com barra dinâmica de URL no
+              iOS/Safari; o overlay usa inset-0 dentro dele. */}
           <div
-            className="absolute inset-0 bg-black/60 backdrop-blur-sm animate-fade-in"
+            className="absolute inset-0 bg-black/60 animate-fade-in"
             onClick={closeMobile}
             aria-hidden
           />
 
-          {/* Drawer da esquerda */}
-          <div className="absolute left-0 top-0 flex h-full w-[88%] max-w-sm flex-col bg-white shadow-2xl animate-slide-in-left">
+          {/* Drawer da esquerda — fundo BRANCO SÓLIDO (bg-white sem alpha),
+              altura 100dvh + min-h-[100dvh] pra nunca deixar o body vazar
+              por baixo em mobile. É colunar: header fixo, busca fixa, nav
+              rolável no meio, ações + info no rodapé fixo. */}
+          <div className="absolute left-0 top-0 flex h-[100dvh] min-h-[100dvh] w-[88%] max-w-sm flex-col overflow-hidden bg-white shadow-2xl animate-slide-in-left">
             {/* ─── Header do drawer: logo + fechar ─── */}
-            <div className="flex items-center justify-between gap-3 border-b border-ink-100 px-4 py-3">
+            <div className="flex shrink-0 items-center justify-between gap-3 border-b border-ink-100 bg-white px-4 py-3">
               <Link href="/" onClick={closeMobile} aria-label="Ir para a página inicial">
                 <Logo
                   shortName={config.shortName}
@@ -222,24 +227,18 @@ export const Header = ({ config, categories }: Props) => {
             </div>
 
             {/* ─── Busca — reaproveita HeaderSearch/mobile ─── */}
-            <div className="border-b border-ink-100 bg-ink-100/40 p-3">
+            <div className="shrink-0 border-b border-ink-100 bg-ink-100/60 p-3">
               <HeaderSearch variant="mobile" onClose={closeMobile} />
             </div>
 
-            {/* ─── Navegação scrollável ─── */}
+            {/* ─── Navegação scrollável — Coleções PRIMEIRO, depois Institucional ─── */}
             <nav
-              className="flex-1 overflow-y-auto overscroll-contain"
+              className="flex-1 overflow-y-auto overscroll-contain bg-white"
               aria-label="Navegação principal"
             >
-              {/* Links principais */}
-              <MobileSection title="Navegar">
-                <MobileLink href="/"          label="Início"     active={isActive('/')}          onClose={closeMobile} />
-                <MobileLink href="/sobre"     label="Quem somos" active={isActive('/sobre')}     onClose={closeMobile} />
-                <MobileLink href="/contato"   label="Contato"    active={isActive('/contato')}   onClose={closeMobile} />
-                <MobileLink href="/politicas" label="Políticas"  active={isActive('/politicas')} onClose={closeMobile} />
-              </MobileSection>
-
-              {/* Coleções — só renderiza se houver categorias ativas */}
+              {/* 1) Coleções — só renderiza se houver categorias ativas.
+                     Prioridade máxima no menu mobile: usuário abre pra
+                     descobrir onde comprar. */}
               {categories.length > 0 && (
                 <MobileSection title="Coleções">
                   {categories.map((c) => (
@@ -255,16 +254,24 @@ export const Header = ({ config, categories }: Props) => {
                 </MobileSection>
               )}
 
-              {/* Institucional — atalhos secundários */}
+              {/* 2) Institucional — na ordem exata pedida:
+                     Quem somos → Contato → Políticas → FAQ → Garantia → Termos.
+                     A seção "Navegar" foi removida — "Início" é acessível pelo
+                     próprio logo do drawer no topo. */}
               <MobileSection title="Institucional">
+                <MobileLink href="/sobre"     label="Quem somos"           active={isActive('/sobre')}     onClose={closeMobile} />
+                <MobileLink href="/contato"   label="Contato"              active={isActive('/contato')}   onClose={closeMobile} />
+                <MobileLink href="/politicas" label="Políticas"            active={isActive('/politicas')} onClose={closeMobile} />
                 <MobileLink href="/faq"       label="Perguntas frequentes" active={isActive('/faq')}       onClose={closeMobile} />
                 <MobileLink href="/garantia"  label="Garantia"             active={isActive('/garantia')}  onClose={closeMobile} />
                 <MobileLink href="/termos"    label="Termos de uso"        active={isActive('/termos')}    onClose={closeMobile} />
               </MobileSection>
             </nav>
 
-            {/* ─── Ações principais: WhatsApp + Carrinho ─── */}
-            <div className="border-t border-ink-100 p-3 pb-4">
+            {/* ─── Ações principais: WhatsApp + Carrinho — rodapé fixo,
+                   fundo branco sólido pra nunca deixar conteúdo da home
+                   aparecer por baixo. ─── */}
+            <div className="shrink-0 border-t border-ink-100 bg-white p-3 pb-4">
               <a
                 href={`https://wa.me/${config.whatsapp}`}
                 onClick={() => {
