@@ -39,25 +39,36 @@ export const ImageUploader = ({
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const isVideo = kind === 'video';
+
   const handleFile = async (file: File) => {
     setError(null);
     setUploading(true);
     try {
+      // NÃO definir Content-Type manualmente — o browser precisa gerar o
+      // boundary de multipart automaticamente. Definir `Content-Type:
+      // multipart/form-data` sem boundary quebra o parser do lado servidor.
       const fd = new FormData();
       fd.append('file', file);
       const url = `/api/admin/upload?kind=${kind}`;
       const res = await fetch(url, { method: 'POST', body: fd });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Falha no upload');
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        // A API já devolve mensagens específicas em português. Fallback só
+        // pra caso extremo (rede caiu antes do JSON).
+        const fallback = isVideo
+          ? 'Não foi possível enviar o vídeo. Verifique se está em MP4 ou WebM e tem até 20 MB.'
+          : 'Não foi possível enviar a imagem. Verifique o formato (PNG, JPG, WEBP, AVIF) e tamanho até 6 MB.';
+        throw new Error(data.error || fallback);
+      }
       onChange(data.url);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Erro no upload');
+      const msg = e instanceof Error ? e.message : 'Erro no upload';
+      setError(msg);
     } finally {
       setUploading(false);
     }
   };
-
-  const isVideo = kind === 'video';
 
   return (
     <div>
