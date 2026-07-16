@@ -653,9 +653,7 @@ export const ProductForm = ({
               <div className="flex-1">
                 <p className="font-semibold text-ink-900">Destacar na home</p>
                 <p className="text-[11px] text-ink-500">
-                  Prioriza este produto na vitrine &ldquo;Novidades&rdquo;.
-                  Se desmarcado, o produto ainda pode aparecer como
-                  &ldquo;publicado recente&rdquo; quando houver espaço.
+                  Exibe este produto na seção Novidades da página inicial.
                 </p>
               </div>
             </label>

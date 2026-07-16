@@ -44,11 +44,11 @@ export const HomeFeaturedCategoryForm = ({ categories, initial }: Props) => {
             Coleção da vitrine &quot;Novidades para sua viagem&quot;
           </h3>
           <p className="mt-1 text-xs text-ink-500">
-            A vitrine prioriza produtos <strong>ativos</strong> desta coleção
-            marcados como <strong>&quot;Destacar na home&quot;</strong>. Se
-            faltarem, ela completa com publicados recentes desta coleção;
-            se ainda faltarem, com publicados recentes de qualquer coleção.
-            Nunca fica vazia enquanto houver produto ativo no catálogo.
+            A vitrine mostra apenas produtos <strong>ativos</strong> com
+            <strong> &quot;Destacar na home&quot;</strong> marcado.
+            Se você escolher uma coleção aqui, o destaque também precisa
+            pertencer a ela. Sem destaques cadastrados, a seção não
+            aparece na home.
           </p>
         </div>
       </div>
@@ -67,7 +67,7 @@ export const HomeFeaturedCategoryForm = ({ categories, initial }: Props) => {
             onChange={(e) => setValue(e.target.value)}
             className="field-input"
           >
-            <option value="">— Nenhuma (vitrine oculta na home)</option>
+            <option value="">— Sem restrição de coleção</option>
             {categories.map((c) => (
               <option key={c.id} value={c.id}>
                 {c.name}

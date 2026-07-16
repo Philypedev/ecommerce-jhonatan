@@ -208,7 +208,7 @@ export default async function AdminHomePage() {
         ? `${featuredProducts} produto${featuredProducts === 1 ? '' : 's'} destacado${featuredProducts === 1 ? '' : 's'} nesta coleção`
         : 'Nenhuma coleção escolhida para a vitrine',
       description:
-        'Prioridade: destacados da coleção configurada abaixo. Se não houver destacados suficientes, a vitrine completa com produtos publicados recentes — nunca fica vazia enquanto houver produto ACTIVE.',
+        'Só aparecem produtos ACTIVE com "Destacar na home" marcado. Se uma coleção estiver configurada abaixo, o produto também precisa pertencer a ela. Sem destaques marcados, a seção não aparece na home.',
       editHref: '/admin/produtos',
       editLabel: 'Ver produtos',
       inlineAnchor: '#vitrine-colecao',
@@ -251,21 +251,21 @@ export default async function AdminHomePage() {
   if (!heroTitleReal) alerts.push({ tone: 'info', title: 'Texto do hero ainda é o padrão', description: 'Personalize o título principal para refletir o tom da sua loja.', href: '/admin/personalizacao#hero', label: 'Editar texto' });
   if (activeRotatingMessages === 0) alerts.push({ tone: 'warning', title: 'Faixa rotativa sem mensagens ativas', description: 'A barra superior aparece vazia. Cadastre ao menos 1 mensagem.', href: '/admin/personalizacao#mensagens', label: 'Adicionar mensagem' });
   if (categoriesOnHome === 0) alerts.push({ tone: 'warning', title: 'Nenhuma coleção marcada para a home', description: 'Marque a flag "Exibir na home" nas coleções que devem aparecer em destaque.', href: '/admin/categorias', label: 'Selecionar coleções' });
-  if (!featuredCategoryId) {
+  if (!featuredCategoryId && featuredProducts === 0) {
     alerts.push({
-      tone: 'info',
-      title: 'Vitrine sem coleção prioritária configurada',
+      tone: 'warning',
+      title: 'Nenhum produto destacado — vitrine oculta na home',
       description:
-        'Sem coleção escolhida, a vitrine mostra produtos publicados recentes de qualquer coleção. Escolher uma coleção prioritária dá destaque aos produtos dela.',
-      href: '#vitrine-colecao',
-      label: 'Escolher coleção',
+        'Marque "Destacar na home" em produtos ACTIVE para preencher a vitrine. Opcionalmente, escolha uma coleção abaixo para limitar o destaque a ela.',
+      href: '/admin/produtos',
+      label: 'Marcar destaques',
     });
   } else if (featuredProducts === 0) {
     alerts.push({
-      tone: 'info',
+      tone: 'warning',
       title: 'Nenhum produto destacado nesta coleção',
       description:
-        'A vitrine ainda mostra produtos publicados recentes desta coleção como fallback. Marque "Destacar na home" nos produtos que você quer priorizar.',
+        'Marque "Destacar na home" em produtos ACTIVE desta coleção para que apareçam na vitrine. Enquanto isso, a seção fica oculta.',
       href: '/admin/produtos',
       label: 'Marcar destaques',
     });

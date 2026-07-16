@@ -53,80 +53,34 @@ const attachOne = async (product: ProductWithRelations | null): Promise<void> =>
 /**
  * Vitrine "Novidades para sua viagem" da home.
  *
- * REGRA COM FALLBACK EM CASCATA — a home nunca fica vazia se houver
- * produto ACTIVE no sistema:
+ * REGRA ESTRITA — sem fallback. Só entram produtos que satisfazem TODAS
+ * as condições:
+ *   - `status = 'ACTIVE'` (publicação está ligada)
+ *   - `featured = true` (checkbox "Destacar na home" está marcado)
+ *   - Se `featuredCategoryId` estiver preenchido em StoreSettings,
+ *     também `categoryId = featuredCategoryId`.
  *
- *   1. Se houver coleção configurada em `StoreSettings.featuredCategoryId`
- *      E existir produto `ACTIVE + featured=true` nela → usa esses.
- *   2. Se cair curto de `limit`, completa com produtos `ACTIVE` recentes
- *      dessa mesma coleção (destacados primeiro, complemento por updatedAt).
- *   3. Se ainda cair curto (ou se nenhuma coleção foi escolhida) → completa
- *      com produtos `ACTIVE` recentes de qualquer coleção.
+ * Nenhum fallback: se o admin não marcou nada como destaque, a vitrine
+ * fica vazia e o `<FeaturedProducts>` retorna `null` (a seção some da
+ * home). "Estar publicado" NÃO é sinônimo de "estar em destaque" — as
+ * decisões são independentes por design.
  *
- * Motivação: cliente publica um produto novo, entra na home e vê o produto
- * — não precisa lembrar de marcar "Destacar na home" ou de configurar a
- * coleção. Se marcou, tem prioridade; se não, o sistema mostra o que existe
- * de publicado.
- *
- * DRAFT/INACTIVE NUNCA aparecem — `status = 'ACTIVE'` é filtro rígido em
- * todas as camadas do fallback.
+ * DRAFT/INACTIVE NUNCA aparecem.
  */
 export const getFeaturedProducts = async (
   featuredCategoryId: string | null,
   limit = 8,
 ): Promise<ProductWithRelations[]> => {
-  const collected = new Map<string, ProductWithRelations>();
-  const push = (arr: ProductWithRelations[]) => {
-    for (const p of arr) {
-      if (collected.size >= limit) break;
-      if (!collected.has(p.id)) collected.set(p.id, p);
-    }
-  };
-
-  // Camada 1: featured + coleção configurada
-  if (featuredCategoryId) {
-    const featured = await prisma.product.findMany({
-      where: { status: 'ACTIVE', featured: true, categoryId: featuredCategoryId },
-      orderBy: { updatedAt: 'desc' },
-      take: limit,
-      include: fullInclude,
-    });
-    push(featured);
-
-    // Camada 2: completar com ativos recentes da mesma coleção (não featured)
-    if (collected.size < limit) {
-      const sameCatRest = await prisma.product.findMany({
-        where: {
-          status: 'ACTIVE',
-          categoryId: featuredCategoryId,
-          NOT: { id: { in: [...collected.keys()] } },
-        },
-        orderBy: { updatedAt: 'desc' },
-        take: limit - collected.size,
-        include: fullInclude,
-      });
-      push(sameCatRest);
-    }
-  }
-
-  // Camada 3: fallback global — ativos recentes de qualquer coleção
-  if (collected.size < limit) {
-    const globalRest = await prisma.product.findMany({
-      where: {
-        status: 'ACTIVE',
-        NOT:
-          collected.size > 0
-            ? { id: { in: [...collected.keys()] } }
-            : undefined,
-      },
-      orderBy: [{ featured: 'desc' }, { updatedAt: 'desc' }],
-      take: limit - collected.size,
-      include: fullInclude,
-    });
-    push(globalRest);
-  }
-
-  const items = [...collected.values()];
+  const items = await prisma.product.findMany({
+    where: {
+      status: 'ACTIVE',
+      featured: true,
+      ...(featuredCategoryId ? { categoryId: featuredCategoryId } : {}),
+    },
+    orderBy: { updatedAt: 'desc' },
+    take: limit,
+    include: fullInclude,
+  });
   await attachValueImages(items);
   return items;
 };
