@@ -33,9 +33,23 @@ ENV CLOUDINARY_CLOUD_NAME=build_placeholder
 ENV CLOUDINARY_API_KEY=build_placeholder
 ENV CLOUDINARY_API_SECRET=build_placeholder
 
-# `npm run build` já chama `prisma generate && next build`.
-# Não usamos `prisma db push` no build — o banco de produção é
-# populado no runtime via `prisma migrate deploy` (ver entrypoint).
+# Cria um SQLite EFÊMERO em /tmp com o schema aplicado ANTES do build.
+# Sem isso, /categoria/[slug] e /sitemap.xml quebram no `next build` com
+# "The table `main.Category` does not exist" — o Next executa
+# generateStaticParams em cada rota dinâmica e precisa introspecionar o
+# banco. As tabelas vazias são suficientes: o build usa apenas metadados.
+#
+# `--skip-generate` porque `npm run build` chama `prisma generate` logo
+# em seguida (evita rodar 2x).
+#
+# Este banco NÃO é o de produção — o EasyPanel monta o volume real em
+# /var/lib/traveltech/prod.db no runtime, e o entrypoint aplica as
+# migrations lá com `prisma migrate deploy`.
+RUN npx prisma db push --skip-generate
+
+# `npm run build` chama `prisma generate && next build`.
+# O next build agora consulta o /tmp/traveltech-build.db (tabelas vazias),
+# então generateStaticParams devolve arrays vazios sem crashar.
 RUN npm run build
 
 
