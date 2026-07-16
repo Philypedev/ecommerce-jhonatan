@@ -41,6 +41,7 @@ const config: Config = {
       animation: {
         'fade-in': 'fadeIn 200ms ease-out',
         'fade-in-up': 'fadeInUp 500ms cubic-bezier(0.2, 0.65, 0.3, 1) both',
+        'slide-in-left': 'slideInLeft 260ms cubic-bezier(0.2, 0.65, 0.3, 1) both',
         'blob-a': 'blobA 22s ease-in-out infinite',
         'blob-b': 'blobB 28s ease-in-out infinite',
         'blob-c': 'blobC 34s ease-in-out infinite',
@@ -54,6 +55,10 @@ const config: Config = {
         fadeInUp: {
           '0%': { opacity: '0', transform: 'translateY(12px)' },
           '100%': { opacity: '1', transform: 'translateY(0)' },
+        },
+        slideInLeft: {
+          '0%':   { transform: 'translateX(-100%)' },
+          '100%': { transform: 'translateX(0)' },
         },
         blobA: {
           '0%, 100%': { transform: 'translate(0, 0) scale(1)' },
