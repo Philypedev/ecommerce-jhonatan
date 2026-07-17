@@ -51,55 +51,33 @@ const attachOne = async (product: ProductWithRelations | null): Promise<void> =>
 };
 
 /**
- * Vitrine geral "Novidades para sua viagem" da home.
- *
- * Comportamento Shopify-style: publicar um produto ACTIVE já o faz
- * candidato à vitrine, sem exigir "Destacar na home". O checkbox
- * `featured` só decide a ORDEM (destaques primeiro).
- *
- * Regras:
- *   - `status = 'ACTIVE'` (obrigatório — DRAFT/INACTIVE nunca aparecem)
- *   - Se `featuredCategoryId` estiver preenchido em StoreSettings,
- *     também `categoryId = featuredCategoryId` (restrição opcional).
- *   - Ordem: `featured DESC` (destaques no topo) → `updatedAt DESC`
- *     (mais recentes em seguida).
- *
- * Home vazia só quando não houver NENHUM produto ACTIVE que satisfaça
- * a restrição opcional de categoria.
- */
-export const getFeaturedProducts = async (
-  featuredCategoryId: string | null,
-  limit = 8,
-): Promise<ProductWithRelations[]> => {
-  const items = await prisma.product.findMany({
-    where: {
-      status: 'ACTIVE',
-      ...(featuredCategoryId ? { categoryId: featuredCategoryId } : {}),
-    },
-    orderBy: [{ featured: 'desc' }, { updatedAt: 'desc' }],
-    take: limit,
-    include: fullInclude,
-  });
-  await attachValueImages(items);
-  return items;
-};
-
-/**
- * Produtos ACTIVE de UMA coleção, para as seções Shopify-style da home
- * (uma seção por coleção). Não filtra por `featured` — publicar já basta
- * — mas coloca destaques primeiro para o admin conseguir "pinar" itens
- * no topo de cada seção sem alterar `position` manualmente.
+ * Produtos ACTIVE de UMA coleção — usado tanto pelas seções Shopify-style
+ * da home quanto pelo smoke suite. Não filtra por `featured` (publicar
+ * basta). Ordem final: `featured DESC` → `position ASC` (ordem manual
+ * definida no admin) → `updatedAt DESC`. `position` vem via raw SQL
+ * porque a coluna foi adicionada com `db push --skip-generate` e o
+ * Prisma client ainda não a conhece — buscamos todos os produtos da
+ * coleção e ordenamos em memória (dezenas de produtos por coleção no
+ * pior caso; custo irrelevante).
  */
 export const getActiveProductsByCategoryId = async (
   categoryId: string,
   limit = 8,
 ): Promise<ProductWithRelations[]> => {
-  const items = await prisma.product.findMany({
+  const all = await prisma.product.findMany({
     where: { status: 'ACTIVE', categoryId },
-    orderBy: [{ featured: 'desc' }, { updatedAt: 'desc' }],
-    take: limit,
     include: fullInclude,
   });
+  if (all.length === 0) return [];
+  const positions = await fetchProductPositions(all.map((p) => p.id));
+  const sorted = [...all].sort((a, b) => {
+    if (a.featured !== b.featured) return a.featured ? -1 : 1;
+    const pa = positions.get(a.id) ?? 0;
+    const pb = positions.get(b.id) ?? 0;
+    if (pa !== pb) return pa - pb;
+    return b.updatedAt.getTime() - a.updatedAt.getTime();
+  });
+  const items = sorted.slice(0, limit);
   await attachValueImages(items);
   return items;
 };

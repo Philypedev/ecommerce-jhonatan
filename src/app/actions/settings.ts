@@ -9,7 +9,6 @@ import {
   homeContentSchema,
   paymentMethodsSchema,
   seoSettingsSchema,
-  homeFeaturedCategorySchema,
   type StoreSettingsInput,
   type HomeContentInput,
   type PaymentMethodsInput,
@@ -91,43 +90,6 @@ export async function moveRotatingMessageAction(id: string, direction: 'up' | 'd
     prisma.rotatingMessage.update({ where: { id: swapWith.id }, data: { position: current.position } }),
   ]);
   revalidateEverywhere();
-}
-
-/**
- * Define qual coleção alimenta a vitrine "Novidades para sua viagem" da home.
- * `null` / string vazia = nenhuma coleção → a vitrine some da página inicial.
- *
- * Só afeta essa vitrine — o restante da home (banners, categorias em destaque,
- * cards de confiança, etc.) permanece independente.
- */
-export async function updateHomeFeaturedCategoryAction(input: {
-  featuredCategoryId?: string | null;
-}): Promise<{ ok: true } | { ok: false; error: string }> {
-  await requireAdmin();
-  const parsed = homeFeaturedCategorySchema.safeParse(input);
-  if (!parsed.success) {
-    return { ok: false, error: parsed.error.errors[0]?.message ?? 'Dados inválidos' };
-  }
-  const value = parsed.data.featuredCategoryId; // já veio como string ou null
-
-  // Se o admin escolheu uma coleção, valida que ela existe (evita id inválido
-  // vindo de manipulação do form).
-  if (value) {
-    const exists = await prisma.category.findUnique({
-      where: { id: value },
-      select: { id: true },
-    });
-    if (!exists) {
-      return { ok: false, error: 'Coleção selecionada não existe mais.' };
-    }
-  }
-
-  await prisma.storeSettings.update({
-    where: { id: 'singleton' },
-    data: { featuredCategoryId: value },
-  });
-  revalidateEverywhere();
-  return { ok: true };
 }
 
 export async function updateHomeContentAction(

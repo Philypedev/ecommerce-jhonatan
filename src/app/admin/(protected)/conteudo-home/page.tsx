@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { prisma } from '@/lib/prisma';
 import { getStoreSettings } from '@/lib/db/settings';
-import { getAllCategories } from '@/lib/db/categories';
+import { getHomeCollections } from '@/lib/db/categories';
 import { parseHomeContent } from '@/lib/homeContent';
 import {
   homeContentSavedStates,
@@ -9,7 +9,6 @@ import {
   isRealHeroTitle,
 } from '@/lib/admin/configChecks';
 import { HomeContentForm } from './HomeContentForm';
-import { HomeFeaturedCategoryForm } from './HomeFeaturedCategoryForm';
 
 export const dynamic = 'force-dynamic';
 
@@ -111,30 +110,27 @@ const AlertRow = ({
 export default async function AdminHomePage() {
   const settings = await getStoreSettings();
   const content = parseHomeContent(settings.homeContentJson);
-  const allCategories = await getAllCategories();
 
-  // A vitrine "Novidades" mostra produtos ACTIVE (Shopify-style — publicar
-  // basta). Se `featuredCategoryId` estiver configurado, restringe a esta
-  // coleção. O contador reflete essa regra para o card não mentir.
-  const featuredCategoryId = settings.featuredCategoryId ?? null;
+  // Home Shopify-style: cada coleção ACTIVE com >= 1 produto ACTIVE
+  // vira uma seção automaticamente. `showOnHome` prioriza a ordem.
+  const homeCollections = await getHomeCollections(1);
 
   // Contagens reais — todas do banco, nada de mock.
   const [
     activeRotatingMessages,
-    categoriesOnHome,
-    activeProductsInVitrine,
+    categoriesOnHomePrioritized,
     activeBanners,
   ] = await Promise.all([
     prisma.rotatingMessage.count({ where: { active: true } }),
     prisma.category.count({ where: { status: 'ACTIVE', showOnHome: true } }),
-    prisma.product.count({
-      where: {
-        status: 'ACTIVE',
-        ...(featuredCategoryId ? { categoryId: featuredCategoryId } : {}),
-      },
-    }),
     prisma.homeBanner.count({ where: { active: true } }),
   ]);
+
+  const collectionsOnHome = homeCollections.length;
+  const totalProductsOnHome = homeCollections.reduce(
+    (acc, c) => acc + c.products.length,
+    0,
+  );
 
   const heroImageReal = isRealHeroImage(settings.heroImageUrl);
   const heroTitleReal = isRealHeroTitle(settings.heroTitle);
@@ -145,8 +141,7 @@ export default async function AdminHomePage() {
     heroImageReal && heroTitleReal ? 'ok' : heroImageReal || heroTitleReal ? 'attention' : 'default';
 
   const rotatingStatus: SectionStatus = activeRotatingMessages > 0 ? 'ok' : 'pending';
-  const categoriesStatus: SectionStatus = categoriesOnHome > 0 ? 'ok' : 'pending';
-  const productsStatus: SectionStatus = activeProductsInVitrine > 0 ? 'ok' : 'pending';
+  const collectionsStatus: SectionStatus = collectionsOnHome > 0 ? 'ok' : 'pending';
   const bannersStatus: SectionStatus = activeBanners > 0 ? 'ok' : 'default';
 
   const heroBadgesStatus: SectionStatus =
@@ -189,26 +184,16 @@ export default async function AdminHomePage() {
       inlineAnchor: '#selos',
     },
     {
-      name: 'Categorias em destaque',
+      name: 'Vitrines por coleção (Shopify-style)',
       type: 'Coleções na home',
-      status: categoriesStatus,
-      metric: `${categoriesOnHome} coleção(ões) marcadas "Exibir na home"`,
-      description: 'Coleções com a flag "Exibir na home" ativa aparecem em destaque na página inicial.',
+      status: collectionsStatus,
+      metric: collectionsOnHome > 0
+        ? `${collectionsOnHome} coleção${collectionsOnHome === 1 ? '' : 'ões'} · ${totalProductsOnHome} produto${totalProductsOnHome === 1 ? '' : 's'} ACTIVE aparecendo`
+        : 'Nenhuma coleção com produto ACTIVE',
+      description:
+        'A home mostra uma seção por coleção ACTIVE com produto ACTIVE dentro. "Exibir na home" prioriza a ordem — não é obrigatório para a coleção aparecer. "Destacar na home" no produto prioriza o produto dentro da sua seção.',
       editHref: '/admin/categorias',
       editLabel: 'Gerenciar coleções',
-    },
-    {
-      name: 'Vitrine "Novidades"',
-      type: 'Vitrine geral',
-      status: productsStatus,
-      metric: featuredCategoryId
-        ? `${activeProductsInVitrine} produto${activeProductsInVitrine === 1 ? '' : 's'} ativo${activeProductsInVitrine === 1 ? '' : 's'} nesta coleção`
-        : `${activeProductsInVitrine} produto${activeProductsInVitrine === 1 ? '' : 's'} ativo${activeProductsInVitrine === 1 ? '' : 's'} candidato${activeProductsInVitrine === 1 ? '' : 's'}`,
-      description:
-        'Aparecem produtos ACTIVE (marcar "Destacar na home" não é obrigatório — só prioriza a ordem). Se uma coleção estiver configurada abaixo, a vitrine se restringe a ela. Além dessa vitrine, coleções com "Exibir na home" ganham a sua própria seção na página inicial.',
-      editHref: '/admin/produtos',
-      editLabel: 'Ver produtos',
-      inlineAnchor: '#vitrine-colecao',
     },
     {
       name: 'Banners promocionais',
@@ -247,24 +232,23 @@ export default async function AdminHomePage() {
   if (!heroImageReal) alerts.push({ tone: 'warning', title: 'Hero sem imagem real', description: 'O topo da home está sem imagem personalizada. Envie uma foto que represente sua marca.', href: '/admin/personalizacao#hero', label: 'Enviar imagem' });
   if (!heroTitleReal) alerts.push({ tone: 'info', title: 'Texto do hero ainda é o padrão', description: 'Personalize o título principal para refletir o tom da sua loja.', href: '/admin/personalizacao#hero', label: 'Editar texto' });
   if (activeRotatingMessages === 0) alerts.push({ tone: 'warning', title: 'Faixa rotativa sem mensagens ativas', description: 'A barra superior aparece vazia. Cadastre ao menos 1 mensagem.', href: '/admin/personalizacao#mensagens', label: 'Adicionar mensagem' });
-  if (categoriesOnHome === 0) alerts.push({ tone: 'warning', title: 'Nenhuma coleção marcada para a home', description: 'Marque a flag "Exibir na home" nas coleções que devem aparecer em destaque.', href: '/admin/categorias', label: 'Selecionar coleções' });
-  if (!featuredCategoryId && activeProductsInVitrine === 0) {
+  if (collectionsOnHome === 0) {
     alerts.push({
       tone: 'warning',
-      title: 'Nenhum produto ACTIVE cadastrado',
+      title: 'Nenhuma coleção ativa com produto ACTIVE',
       description:
-        'A vitrine "Novidades" fica vazia enquanto não houver produtos publicados. Publique um produto ativo para aparecer na home.',
-      href: '/admin/produtos',
-      label: 'Cadastrar produto',
-    });
-  } else if (activeProductsInVitrine === 0) {
-    alerts.push({
-      tone: 'warning',
-      title: 'Nenhum produto ACTIVE nesta coleção',
-      description:
-        'A vitrine "Novidades" está restrita a uma coleção sem produtos ACTIVE. Publique produtos nesta coleção ou remova a restrição abaixo.',
+        'A home fica sem vitrines de produtos enquanto não houver ao menos uma coleção ACTIVE com >= 1 produto ACTIVE dentro. Publique um produto ou ative uma coleção existente.',
       href: '/admin/produtos',
       label: 'Ver produtos',
+    });
+  } else if (categoriesOnHomePrioritized === 0) {
+    alerts.push({
+      tone: 'info',
+      title: 'Nenhuma coleção priorizada com "Exibir na home"',
+      description:
+        'As coleções ainda aparecem por ordem de posição, mas marcar "Exibir na home" leva as principais para o topo.',
+      href: '/admin/categorias',
+      label: 'Marcar prioridade',
     });
   }
   if (activeBanners === 0) alerts.push({ tone: 'info', title: 'Nenhum banner promocional ativo', description: 'Banners não são obrigatórios, mas ajudam a divulgar campanhas. Adicione um para reforçar uma oferta.', href: '/admin/banners', label: 'Criar banner' });
@@ -340,24 +324,6 @@ export default async function AdminHomePage() {
           </div>
         </section>
       )}
-
-      {/* ─────── Coleção da vitrine principal ─────── */}
-      <section className="space-y-3" id="vitrine-colecao">
-        <div>
-          <h2 className="text-base font-extrabold text-ink-900 md:text-lg">
-            Vitrine principal
-          </h2>
-          <p className="mt-0.5 text-xs text-ink-500">
-            Configure qual coleção alimenta a seção &quot;Novidades para sua viagem&quot;.
-          </p>
-        </div>
-        <HomeFeaturedCategoryForm
-          categories={allCategories
-            .filter((c) => c.status === 'ACTIVE')
-            .map((c) => ({ id: c.id, name: c.name }))}
-          initial={featuredCategoryId}
-        />
-      </section>
 
       {/* ─────── Edição inline das 3 seções textuais ─────── */}
       <section className="space-y-3">

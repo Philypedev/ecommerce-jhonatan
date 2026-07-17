@@ -131,31 +131,36 @@ export type HomeCollection = {
 };
 
 /**
- * Vitrines Shopify-style da home — uma por coleção. Devolve na ordem
- * exata em que devem ser renderizadas: coleção ACTIVE + `showOnHome=true`
- * + pelo menos 1 produto ACTIVE dentro, ordenadas por `position`. Cada
- * item traz `products` (limit `perCollectionLimit`) já ordenados
- * `featured DESC, updatedAt DESC` via getActiveProductsByCategoryId.
+ * Vitrines Shopify-style da home — uma por coleção. Regra:
+ *   - toda coleção `status='ACTIVE'` com >= 1 produto `status='ACTIVE'`
+ *     dentro entra na home. `showOnHome` NÃO filtra: se o admin
+ *     esqueceu de marcar mas a coleção tem produto ativo, ela ainda
+ *     aparece.
+ *   - `showOnHome=true` apenas PRIORIZA a ordem — vem antes das
+ *     coleções sem o flag. Empate resolvido por `position ASC` (o
+ *     `getPublicCategories` já retorna nessa ordem).
  *
- * Coleções vazias somem — nunca aparece card "Explorar Drones" sem
- * produto pra clicar. Coleção `ofertas` entra normalmente se tiver
- * produto vinculado (a página /categoria/ofertas ainda tem sua regra
- * própria de "produto em oferta = oldPrice > price"; aqui usamos o
- * `categoryId` como qualquer outra coleção).
+ * Produtos de cada seção vêm por `getActiveProductsByCategoryId`, que
+ * ordena `featured DESC, position ASC, updatedAt DESC`. Coleções vazias
+ * somem (defesa em profundidade contra estado alterando entre queries).
  */
 export const getHomeCollections = async (
   perCollectionLimit = 8,
 ): Promise<HomeCollection[]> => {
   const all = await getPublicCategories();
-  const eligible = await withActiveProducts(all.filter((c) => c.showOnHome));
+  const eligible = await withActiveProducts(all);
+  const prioritized = [...eligible].sort((a, b) => {
+    const aFlag = a.showOnHome ? 0 : 1;
+    const bFlag = b.showOnHome ? 0 : 1;
+    if (aFlag !== bFlag) return aFlag - bFlag;
+    return 0;
+  });
   const enriched = await Promise.all(
-    eligible.map(async (category) => ({
+    prioritized.map(async (category) => ({
       category,
       products: await getActiveProductsByCategoryId(category.id, perCollectionLimit),
     })),
   );
-  // withActiveProducts já garante ≥1 ACTIVE por coleção; defesa em
-  // profundidade caso o estado mude entre as duas queries.
   return enriched.filter((c) => c.products.length > 0);
 };
 
