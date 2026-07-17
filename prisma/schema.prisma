@@ -55,6 +55,10 @@ model Product {
   fullDescription String                  @default("")
   price           Float                   @default(0)
   oldPrice        Float?
+  // Custo unitário (só admin — nunca exibido no ecommerce público). Alimenta
+  // o cálculo automático de lucro e margem no painel. Nullable: rascunho pode
+  // ser salvo sem custo; produto publicado sem custo apenas oculta o cálculo.
+  costPrice       Float?
   installments    Int                     @default(1)
   sku             String                  @unique
   brand           String                  @default("")

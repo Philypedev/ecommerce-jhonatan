@@ -66,6 +66,7 @@ export default async function EditProductPage({
           fullDescription: product.fullDescription,
           price: product.price,
           oldPrice: product.oldPrice ?? null,
+          costPrice: product.costPrice ?? null,
           installments: product.installments,
           sku: product.sku,
           brand: product.brand,

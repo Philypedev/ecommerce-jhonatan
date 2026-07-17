@@ -61,6 +61,10 @@ export const productSchema = z
     fullDescription: z.string().default(''),
     price: z.coerce.number().nonnegative('Preço não pode ser negativo').default(0),
     oldPrice: z.coerce.number().nonnegative().nullable().optional(),
+    // Custo unitário — usado só no painel para calcular lucro/margem. Nunca
+    // aparece publicamente. Opcional e nullable: rascunho e produto ACTIVE
+    // podem ser salvos sem custo (o painel apenas oculta o cálculo).
+    costPrice: z.coerce.number().nonnegative('Custo não pode ser negativo').nullable().optional(),
     installments: z.coerce.number().int().min(1).max(24).default(1),
     sku: z.string().default(''),
     brand: z.string().default(''),

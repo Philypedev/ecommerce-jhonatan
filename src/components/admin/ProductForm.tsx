@@ -7,6 +7,7 @@ import { createProductAction, updateProductAction } from '@/app/actions/products
 import type { ProductInput } from '@/lib/validation/schemas';
 import { ProductImagesField, type ProductImageEntry } from './ProductImagesField';
 import { formatCurrency } from '@/utils/formatCurrency';
+import { computeMargin, LOW_MARGIN_THRESHOLD_PCT } from '@/utils/margin';
 
 type CategoryOption = { id: string; name: string };
 
@@ -52,6 +53,7 @@ const defaultData: ProductInput = {
   fullDescription: '',
   price: 0,
   oldPrice: null,
+  costPrice: null,
   installments: 12,
   sku: '',
   brand: '',
@@ -165,6 +167,9 @@ export const ProductForm = ({
   );
   const [oldPriceInput, setOldPriceInput] = useState<string>(
     () => (initial?.oldPrice != null ? String(initial.oldPrice) : ''),
+  );
+  const [costPriceInput, setCostPriceInput] = useState<string>(
+    () => (initial?.costPrice != null ? String(initial.costPrice) : ''),
   );
 
   // Ligado automaticamente quando o produto já tem opções salvas
@@ -411,10 +416,10 @@ export const ProductForm = ({
           <Section
             number={4}
             title="Preço e estoque"
-            subtitle="Valores exibidos na loja. Preço antigo é usado para calcular o desconto automático."
+            subtitle="Valores exibidos na loja. Preço antigo entra no cálculo do desconto automático. Custo é só interno."
             icon={<PriceSvg />}
           >
-            <div className="grid gap-4 sm:grid-cols-4">
+            <div className="grid gap-4 sm:grid-cols-3 lg:grid-cols-5">
               <Field label="Preço (R$)" required>
                 <input
                   type="text"
@@ -454,6 +459,29 @@ export const ProductForm = ({
                   className="field-input"
                 />
               </Field>
+              <Field
+                label="Custo (R$)"
+                hint="Só admin. Alimenta lucro e margem. Nunca aparece publicamente."
+              >
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  autoComplete="off"
+                  value={costPriceInput}
+                  onChange={(e) => {
+                    if (e.target.value.trim() === '') {
+                      setCostPriceInput('');
+                      set('costPrice', null);
+                      return;
+                    }
+                    const { display, value } = normalizeDecimalInput(e.target.value);
+                    setCostPriceInput(display);
+                    set('costPrice', value);
+                  }}
+                  placeholder="0,00"
+                  className="field-input"
+                />
+              </Field>
               <Field label="Parcelas" hint="Máximo de parcelas exibidas na loja.">
                 <input
                   type="number"
@@ -474,6 +502,8 @@ export const ProductForm = ({
                 />
               </Field>
             </div>
+
+            <MarginBreakdown price={data.price} cost={data.costPrice ?? null} />
 
             {hasDiscount && (
               <p className="mt-3 inline-flex items-center gap-2 rounded-lg bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-700">
@@ -710,31 +740,66 @@ export const ProductForm = ({
           </SidebarCard>
 
           <SidebarCard title="Resumo">
-            <dl className="grid grid-cols-2 gap-3 text-xs">
-              <ResumeItem
-                label="Preço"
-                value={data.price > 0 ? formatCurrency(data.price) : '—'}
-              />
-              <ResumeItem
-                label="Desconto"
-                value={hasDiscount ? `${discountPct}%` : '—'}
-                tone={hasDiscount ? 'emerald' : undefined}
-              />
-              <ResumeItem
-                label="Estoque"
-                value={String(data.stock)}
-                tone={data.stock === 0 ? 'amber' : undefined}
-              />
-              <ResumeItem label="Imagens" value={String(data.images.length)} />
-              <ResumeItem
-                label="Benefícios"
-                value={String(data.benefits.filter(Boolean).length)}
-              />
-              <ResumeItem
-                label="FAQs"
-                value={String(data.faq.filter((f) => f.question).length)}
-              />
-            </dl>
+            {(() => {
+              const margin = computeMargin(data.price, data.costPrice ?? null);
+              const marginTone: 'emerald' | 'amber' | 'rose' | undefined =
+                margin.status === 'ok'
+                  ? 'emerald'
+                  : margin.status === 'low'
+                    ? 'amber'
+                    : margin.status === 'danger'
+                      ? 'rose'
+                      : undefined;
+              return (
+                <dl className="grid grid-cols-2 gap-3 text-xs">
+                  <ResumeItem
+                    label="Preço"
+                    value={data.price > 0 ? formatCurrency(data.price) : '—'}
+                  />
+                  <ResumeItem
+                    label="Custo"
+                    value={
+                      data.costPrice != null && data.costPrice > 0
+                        ? formatCurrency(data.costPrice)
+                        : '—'
+                    }
+                  />
+                  <ResumeItem
+                    label="Lucro"
+                    value={margin.profit != null ? formatCurrency(margin.profit) : '—'}
+                    tone={marginTone}
+                  />
+                  <ResumeItem
+                    label="Margem"
+                    value={
+                      margin.marginPct != null
+                        ? `${margin.marginPct.toFixed(2).replace('.', ',')}%`
+                        : '—'
+                    }
+                    tone={marginTone}
+                  />
+                  <ResumeItem
+                    label="Desconto"
+                    value={hasDiscount ? `${discountPct}%` : '—'}
+                    tone={hasDiscount ? 'emerald' : undefined}
+                  />
+                  <ResumeItem
+                    label="Estoque"
+                    value={String(data.stock)}
+                    tone={data.stock === 0 ? 'amber' : undefined}
+                  />
+                  <ResumeItem label="Imagens" value={String(data.images.length)} />
+                  <ResumeItem
+                    label="Benefícios"
+                    value={String(data.benefits.filter(Boolean).length)}
+                  />
+                  <ResumeItem
+                    label="FAQs"
+                    value={String(data.faq.filter((f) => f.question).length)}
+                  />
+                </dl>
+              );
+            })()}
 
             {missingForPublish && (
               <p className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-[11px] text-amber-800">
@@ -887,7 +952,7 @@ const ResumeItem = ({
 }: {
   label: string;
   value: string;
-  tone?: 'emerald' | 'amber';
+  tone?: 'emerald' | 'amber' | 'rose';
 }) => (
   <div>
     <dt className="text-[10px] font-semibold uppercase tracking-wider text-ink-500">{label}</dt>
@@ -897,13 +962,95 @@ const ResumeItem = ({
           ? 'text-emerald-700'
           : tone === 'amber'
             ? 'text-amber-700'
-            : 'text-ink-900'
+            : tone === 'rose'
+              ? 'text-rose-700'
+              : 'text-ink-900'
       }`}
     >
       {value}
     </dd>
   </div>
 );
+
+/**
+ * Painel inline "Custo · Lucro · Margem" mostrado na seção Preço e estoque.
+ * Fonte única da regra é `computeMargin` — este componente só decide UI:
+ *  - status='none'   → chips vazios com "—"
+ *  - status='ok'     → visual neutro/verde
+ *  - status='low'    → aviso amarelo "Margem baixa"
+ *  - status='danger' → alerta vermelho "Preço abaixo do custo"
+ */
+const MarginBreakdown = ({
+  price,
+  cost,
+}: {
+  price: number;
+  cost: number | null;
+}) => {
+  const { profit, marginPct, status } = computeMargin(price, cost);
+
+  const wrapTone =
+    status === 'danger'
+      ? 'border-rose-200 bg-rose-50/70'
+      : status === 'low'
+        ? 'border-amber-200 bg-amber-50/70'
+        : status === 'ok'
+          ? 'border-emerald-200 bg-emerald-50/70'
+          : 'border-ink-100 bg-ink-100/40';
+
+  const valueTone =
+    status === 'danger'
+      ? 'text-rose-700'
+      : status === 'low'
+        ? 'text-amber-700'
+        : status === 'ok'
+          ? 'text-emerald-700'
+          : 'text-ink-500';
+
+  const profitLabel = profit != null ? formatCurrency(profit) : '—';
+  const marginLabel =
+    marginPct != null ? `${marginPct.toFixed(2).replace('.', ',')}%` : '—';
+
+  return (
+    <div
+      className={`mt-4 rounded-xl border px-4 py-3 ${wrapTone}`}
+      aria-live="polite"
+    >
+      <p className="text-[10px] font-semibold uppercase tracking-wider text-ink-500">
+        Cálculo interno · não aparece na loja
+      </p>
+      <dl className="mt-1 grid grid-cols-3 gap-4">
+        <div>
+          <dt className="text-[11px] font-semibold text-ink-600">Custo</dt>
+          <dd className="mt-0.5 text-sm font-bold text-ink-900">
+            {cost != null && cost > 0 ? formatCurrency(cost) : '—'}
+          </dd>
+        </div>
+        <div>
+          <dt className="text-[11px] font-semibold text-ink-600">Lucro</dt>
+          <dd className={`mt-0.5 text-sm font-bold ${valueTone}`}>{profitLabel}</dd>
+        </div>
+        <div>
+          <dt className="text-[11px] font-semibold text-ink-600">Margem</dt>
+          <dd className={`mt-0.5 text-sm font-bold ${valueTone}`}>{marginLabel}</dd>
+        </div>
+      </dl>
+
+      {status === 'danger' && (
+        <p className="mt-3 inline-flex items-center gap-2 rounded-lg bg-rose-100 px-3 py-1.5 text-xs font-semibold text-rose-800">
+          <AlertSvg size={14} />
+          Preço abaixo do custo. Revise a margem.
+        </p>
+      )}
+      {status === 'low' && (
+        <p className="mt-3 inline-flex items-center gap-2 rounded-lg bg-amber-100 px-3 py-1.5 text-xs font-semibold text-amber-800">
+          <AlertSvg size={14} />
+          Margem baixa (&lt; {LOW_MARGIN_THRESHOLD_PCT}%). Revise preço ou custo.
+        </p>
+      )}
+    </div>
+  );
+};
 
 const CharCounter = ({
   value,

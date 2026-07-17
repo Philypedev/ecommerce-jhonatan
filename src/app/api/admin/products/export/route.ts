@@ -7,6 +7,7 @@ import {
   type AdminProductSort,
   type AdminProductStockFilter,
 } from '@/lib/db/products';
+import { computeMargin } from '@/utils/margin';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -69,6 +70,9 @@ export async function GET(req: NextRequest) {
     'Status',
     'Preço',
     'Preço antigo',
+    'Custo',
+    'Lucro',
+    'Margem (%)',
     'Estoque',
     'Marca',
     'Destaque',
@@ -77,22 +81,30 @@ export async function GET(req: NextRequest) {
     'Atualizado em',
   ];
 
-  const rows = items.map((p) => [
-    p.id,
-    p.name,
-    p.sku,
-    p.slug,
-    p.category?.name ?? '',
-    p.status,
-    p.price.toFixed(2).replace('.', ','),
-    p.oldPrice != null ? p.oldPrice.toFixed(2).replace('.', ',') : '',
-    p.stock,
-    p.brand,
-    p.featured ? 'Sim' : 'Não',
-    p.badge ?? '',
-    isoLocal(p.createdAt),
-    isoLocal(p.updatedAt),
-  ]);
+  const money = (v: number) => v.toFixed(2).replace('.', ',');
+
+  const rows = items.map((p) => {
+    const margin = computeMargin(p.price, p.costPrice ?? null);
+    return [
+      p.id,
+      p.name,
+      p.sku,
+      p.slug,
+      p.category?.name ?? '',
+      p.status,
+      money(p.price),
+      p.oldPrice != null ? money(p.oldPrice) : '',
+      p.costPrice != null ? money(p.costPrice) : '',
+      margin.profit != null ? money(margin.profit) : '',
+      margin.marginPct != null ? margin.marginPct.toFixed(2).replace('.', ',') : '',
+      p.stock,
+      p.brand,
+      p.featured ? 'Sim' : 'Não',
+      p.badge ?? '',
+      isoLocal(p.createdAt),
+      isoLocal(p.updatedAt),
+    ];
+  });
 
   // BOM para o Excel abrir com acentos certos por padrão.
   const csv =
