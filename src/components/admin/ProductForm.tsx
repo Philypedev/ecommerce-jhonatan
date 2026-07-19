@@ -8,6 +8,11 @@ import type { ProductInput } from '@/lib/validation/schemas';
 import { ProductImagesField, type ProductImageEntry } from './ProductImagesField';
 import { formatCurrency } from '@/utils/formatCurrency';
 import { computeMargin, LOW_MARGIN_THRESHOLD_PCT } from '@/utils/margin';
+import {
+  formatBRLCurrencyInput,
+  formatBRLCurrencyBlur,
+  numberToBRLCurrencyDisplay,
+} from '@/utils/brlCurrencyMask';
 
 type CategoryOption = { id: string; name: string };
 
@@ -21,29 +26,6 @@ type Props = {
    * salvo vs produto publicado. `undefined` (compat) cai no genérico.
    */
   savedAs?: 'draft' | 'active' | 'inactive';
-};
-
-/**
- * Normaliza input decimal digitado no browser:
- *  - troca vírgula por ponto
- *  - remove caracteres não-numéricos (exceto ponto)
- *  - permite só um ponto decimal
- *  - remove zeros à esquerda ("0333" → "333", "00" → "0", "00,50" → "0.50")
- *
- * Retorna a string normalizada (para exibir de volta no input) e o número.
- */
-const normalizeDecimalInput = (raw: string): { display: string; value: number } => {
-  let s = raw.replace(/,/g, '.').replace(/[^0-9.]/g, '');
-  const firstDot = s.indexOf('.');
-  if (firstDot !== -1) {
-    s = s.slice(0, firstDot + 1) + s.slice(firstDot + 1).replace(/\./g, '');
-  }
-  // Strip leading zeros mas preserva "0", "0.xxx" e string vazia
-  if (s.length > 1 && s.startsWith('0') && s[1] !== '.') {
-    s = s.replace(/^0+/, '') || '0';
-  }
-  const num = s === '' || s === '.' ? 0 : Number(s);
-  return { display: s, value: Number.isFinite(num) ? num : 0 };
 };
 
 const defaultData: ProductInput = {
@@ -162,14 +144,28 @@ export const ProductForm = ({
   // Preço e preço-antigo: mantemos a string "visível" no input separada do
   // número gravado no state. Isso preserva o cursor e permite normalizar
   // (strip zeros à esquerda, aceitar vírgula) sem lutar contra o React.
+  // Inputs de moeda: state guarda o TEXTO EXIBIDO (com máscara BRL),
+  // enquanto `data.price/oldPrice/costPrice` guarda o Number gravado. Isso
+  // deixa o cursor bem comportado e permite mostrar "2.490,00" ao abrir
+  // um produto em edição sem esse valor virar "2490" quando o React
+  // re-renderiza.
   const [priceInput, setPriceInput] = useState<string>(
-    () => (initial?.price != null && initial.price > 0 ? String(initial.price) : ''),
+    () =>
+      initial?.price != null && initial.price > 0
+        ? numberToBRLCurrencyDisplay(initial.price)
+        : '',
   );
   const [oldPriceInput, setOldPriceInput] = useState<string>(
-    () => (initial?.oldPrice != null ? String(initial.oldPrice) : ''),
+    () =>
+      initial?.oldPrice != null
+        ? numberToBRLCurrencyDisplay(initial.oldPrice)
+        : '',
   );
   const [costPriceInput, setCostPriceInput] = useState<string>(
-    () => (initial?.costPrice != null ? String(initial.costPrice) : ''),
+    () =>
+      initial?.costPrice != null
+        ? numberToBRLCurrencyDisplay(initial.costPrice)
+        : '',
   );
 
   // Ligado automaticamente quando o produto já tem opções salvas
@@ -269,6 +265,11 @@ export const ProductForm = ({
       !data.categoryId ||
       data.price <= 0);
 
+  // Nota: `data.benefits/specifications/packageContent/warranty/faq` continuam
+  // no state, hidratados de `initial` e enviados no payload de save. A UI
+  // simplificada apenas oculta esses campos — produtos antigos que já tinham
+  // conteúdo preservam os dados no banco quando salvos por essa tela.
+
   return (
     <form onSubmit={(e) => submit(e)} className="space-y-6" noValidate>
       {saved && (
@@ -289,21 +290,16 @@ export const ProductForm = ({
         </div>
       )}
 
-      <div className="grid gap-6 lg:grid-cols-3">
+      <div className="grid gap-5 lg:grid-cols-3">
         {/* ─────── Coluna principal ─────── */}
-        <div className="space-y-6 lg:col-span-2">
-          {/* 1. Informações básicas */}
-          <Section
-            number={1}
-            title="Informações básicas"
-            subtitle="Nome, código e identificadores do produto."
-            icon={<InfoSvg />}
-          >
+        <div className="space-y-5 lg:col-span-2">
+          {/* Produto — nome, slug, descrição */}
+          <Card title="Produto">
             <div className="grid gap-4">
               <Field
                 label="Nome do produto"
                 required
-                hint="Obrigatório para publicar. Rascunho pode ser salvo sem nome — vira &quot;Produto sem título&quot; automaticamente."
+                hint="Obrigatório para publicar. Rascunho vira &quot;Produto sem título&quot; automaticamente."
               >
                 <input
                   value={data.name}
@@ -313,57 +309,6 @@ export const ProductForm = ({
                 />
               </Field>
 
-              <div className="grid gap-4 sm:grid-cols-2">
-                <Field
-                  label="Slug (URL)"
-                  hint="Gerado a partir do nome. Edite se quiser um link mais amigável."
-                >
-                  <div className="flex items-center gap-2 rounded-lg border border-ink-100 bg-ink-100/40 px-3 focus-within:border-brand-500 focus-within:bg-white">
-                    <span className="text-xs text-ink-500">/produto/</span>
-                    <input
-                      value={data.slug}
-                      onChange={(e) => {
-                        setSlugTouched(true);
-                        set('slug', slugify(e.target.value));
-                      }}
-                      className="w-full border-0 bg-transparent py-2 font-mono text-xs text-ink-900 focus:outline-none"
-                    />
-                  </div>
-                </Field>
-
-                <Field
-                  label="SKU"
-                  required
-                  hint="Obrigatório para publicar. Rascunho recebe SKU temporário automático."
-                >
-                  <input
-                    value={data.sku}
-                    onChange={(e) => set('sku', e.target.value)}
-                    placeholder="Ex.: TP-2024-BLK-20"
-                    className="field-input font-mono text-xs"
-                  />
-                </Field>
-              </div>
-
-              <Field label="Marca" hint="Fabricante ou marca própria (opcional).">
-                <input
-                  value={data.brand}
-                  onChange={(e) => set('brand', e.target.value)}
-                  placeholder="Ex.: TravelPro"
-                  className="field-input"
-                />
-              </Field>
-            </div>
-          </Section>
-
-          {/* 2. Descrição */}
-          <Section
-            number={2}
-            title="Descrição"
-            subtitle="Texto curto para vitrines e descrição completa para a página do produto."
-            icon={<DocSvg />}
-          >
-            <div className="grid gap-4">
               <Field
                 label="Descrição curta"
                 hint="Aparece em cards e resumos. Ideal até 160 caracteres."
@@ -385,41 +330,52 @@ export const ProductForm = ({
 
               <Field
                 label="Descrição completa"
-                hint="Suporta quebras de linha. Use para detalhar o produto."
+                hint="Coloque aqui benefícios, especificações, conteúdo da embalagem, garantia — tudo em um único texto. Quebras de linha são preservadas."
               >
                 <textarea
-                  rows={6}
+                  rows={10}
                   value={data.fullDescription}
                   onChange={(e) => set('fullDescription', e.target.value)}
                   className="field-input"
-                  placeholder="Fale sobre o produto, materiais, ocasiões de uso e diferenciais."
+                  placeholder="Descreva o produto, materiais, ocasiões de uso e diferenciais.
+Depois liste benefícios, especificações e o que acompanha na caixa."
                 />
               </Field>
-            </div>
-          </Section>
 
-          {/* 3. Mídia */}
-          <Section
-            number={3}
+              <Field
+                label="Slug (URL)"
+                hint="Gerado a partir do nome. Edite se quiser um link mais amigável."
+              >
+                <div className="flex items-center gap-2 rounded-lg border border-ink-100 bg-ink-100/40 px-3 focus-within:border-brand-500 focus-within:bg-white">
+                  <span className="text-xs text-ink-500">/produto/</span>
+                  <input
+                    value={data.slug}
+                    onChange={(e) => {
+                      setSlugTouched(true);
+                      set('slug', slugify(e.target.value));
+                    }}
+                    className="w-full border-0 bg-transparent py-2 font-mono text-xs text-ink-900 focus:outline-none"
+                  />
+                </div>
+              </Field>
+            </div>
+          </Card>
+
+          {/* Mídia — inalterada; primeira imagem vira capa. */}
+          <Card
             title="Mídia"
             subtitle="A primeira imagem será usada como capa em todas as vitrines."
-            icon={<ImageSvg />}
           >
             <ProductImagesField
               images={data.images as ProductImageEntry[]}
               onChange={(imgs) => set('images', imgs)}
               hint="1000 × 1000 px (quadrado 1:1) — JPG, PNG ou WEBP até 6 MB. Fundo branco ou neutro recomendado."
             />
-          </Section>
+          </Card>
 
-          {/* 4. Preço e estoque */}
-          <Section
-            number={4}
-            title="Preço e estoque"
-            subtitle="Valores exibidos na loja. Preço antigo entra no cálculo do desconto automático. Custo é só interno."
-            icon={<PriceSvg />}
-          >
-            <div className="grid gap-4 sm:grid-cols-3 lg:grid-cols-5">
+          {/* Preço — inclui cálculo interno de custo/lucro/margem. */}
+          <Card title="Preço">
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
               <Field label="Preço (R$)" required>
                 <input
                   type="text"
@@ -427,7 +383,12 @@ export const ProductForm = ({
                   autoComplete="off"
                   value={priceInput}
                   onChange={(e) => {
-                    const { display, value } = normalizeDecimalInput(e.target.value);
+                    const { display, value } = formatBRLCurrencyInput(e.target.value);
+                    setPriceInput(display);
+                    set('price', value);
+                  }}
+                  onBlur={(e) => {
+                    const { display, value } = formatBRLCurrencyBlur(e.target.value);
                     setPriceInput(display);
                     set('price', value);
                   }}
@@ -445,13 +406,22 @@ export const ProductForm = ({
                   autoComplete="off"
                   value={oldPriceInput}
                   onChange={(e) => {
-                    // "" = sem preço antigo (null no banco)
                     if (e.target.value.trim() === '') {
                       setOldPriceInput('');
                       set('oldPrice', null);
                       return;
                     }
-                    const { display, value } = normalizeDecimalInput(e.target.value);
+                    const { display, value } = formatBRLCurrencyInput(e.target.value);
+                    setOldPriceInput(display);
+                    set('oldPrice', value);
+                  }}
+                  onBlur={(e) => {
+                    if (e.target.value.trim() === '') {
+                      setOldPriceInput('');
+                      set('oldPrice', null);
+                      return;
+                    }
+                    const { display, value } = formatBRLCurrencyBlur(e.target.value);
                     setOldPriceInput(display);
                     set('oldPrice', value);
                   }}
@@ -474,7 +444,17 @@ export const ProductForm = ({
                       set('costPrice', null);
                       return;
                     }
-                    const { display, value } = normalizeDecimalInput(e.target.value);
+                    const { display, value } = formatBRLCurrencyInput(e.target.value);
+                    setCostPriceInput(display);
+                    set('costPrice', value);
+                  }}
+                  onBlur={(e) => {
+                    if (e.target.value.trim() === '') {
+                      setCostPriceInput('');
+                      set('costPrice', null);
+                      return;
+                    }
+                    const { display, value } = formatBRLCurrencyBlur(e.target.value);
                     setCostPriceInput(display);
                     set('costPrice', value);
                   }}
@@ -492,15 +472,6 @@ export const ProductForm = ({
                   className="field-input"
                 />
               </Field>
-              <Field label="Estoque">
-                <input
-                  type="number"
-                  min={0}
-                  value={data.stock}
-                  onChange={(e) => set('stock', Number(e.target.value))}
-                  className="field-input"
-                />
-              </Field>
             </div>
 
             <MarginBreakdown price={data.price} cost={data.costPrice ?? null} />
@@ -511,23 +482,47 @@ export const ProductForm = ({
                 Desconto de {discountPct}% aplicado automaticamente na loja.
               </p>
             )}
+          </Card>
+
+          {/* Estoque — SKU vive aqui (padrão Shopify). */}
+          <Card title="Estoque">
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Field
+                label="SKU"
+                required
+                hint="Obrigatório para publicar. Rascunho recebe SKU temporário automático."
+              >
+                <input
+                  value={data.sku}
+                  onChange={(e) => set('sku', e.target.value)}
+                  placeholder="Ex.: TP-2024-BLK-20"
+                  className="field-input font-mono text-xs"
+                />
+              </Field>
+              <Field label="Quantidade em estoque">
+                <input
+                  type="number"
+                  min={0}
+                  value={data.stock}
+                  onChange={(e) => set('stock', Number(e.target.value))}
+                  className="field-input"
+                />
+              </Field>
+            </div>
 
             {data.stock === 0 && (
-              <p className="mt-2 inline-flex items-center gap-2 rounded-lg bg-amber-50 px-3 py-1.5 text-xs font-semibold text-amber-700">
+              <p className="mt-3 inline-flex items-center gap-2 rounded-lg bg-amber-50 px-3 py-1.5 text-xs font-semibold text-amber-700">
                 <AlertSvg size={14} />
                 Estoque zerado — o produto será exibido como &ldquo;Sob consulta&rdquo;.
               </p>
             )}
-          </Section>
+          </Card>
 
-          {/* 5. Variações */}
-          <Section
-            number={5}
+          {/* Variações — compacto quando OFF. */}
+          <Card
             title="Variações"
-            subtitle="Cor, tamanho e outras opções que geram combinações do mesmo produto."
-            icon={<GridSvg />}
             action={
-              <label className="inline-flex items-center gap-2 rounded-full border border-ink-100 bg-white px-3 py-1.5 text-xs font-semibold text-ink-700 shadow-sm">
+              <label className="inline-flex cursor-pointer items-center gap-2 text-xs font-semibold text-ink-700">
                 <input
                   type="checkbox"
                   checked={variationsEnabled}
@@ -539,9 +534,8 @@ export const ProductForm = ({
             }
           >
             {!variationsEnabled ? (
-              <p className="rounded-xl border border-dashed border-ink-200 bg-ink-100/30 p-4 text-sm text-ink-500">
-                Deixe desligado se o produto é vendido em uma única configuração. Ative para
-                cadastrar múltiplas opções (ex.: cor + tamanho).
+              <p className="text-xs text-ink-500">
+                Ative para cadastrar cor, tamanho ou outras opções com preço e estoque próprios.
               </p>
             ) : (
               <VariationsBuilder
@@ -551,80 +545,13 @@ export const ProductForm = ({
                 onVariantChange={updateVariant}
               />
             )}
-          </Section>
+          </Card>
 
-          {/* 6. Benefícios */}
-          <Section
-            number={6}
-            title="Benefícios"
-            subtitle="Frases curtas que aparecem em destaque na página do produto."
-            icon={<CheckListSvg />}
-          >
-            <DynamicList
-              items={data.benefits}
-              onChange={(v) => set('benefits', v)}
-              placeholder="Ex.: Rodas 360º silenciosas"
-              addLabel="Adicionar benefício"
-            />
-          </Section>
-
-          {/* 7. Especificações */}
-          <Section
-            number={7}
-            title="Especificações técnicas"
-            subtitle="Tabela de atributos técnicos (dimensões, materiais, capacidade...)."
-            icon={<ListSvg />}
-          >
-            <SpecsList items={data.specifications} onChange={(v) => set('specifications', v)} />
-          </Section>
-
-          {/* 8. Conteúdo da embalagem */}
-          <Section
-            number={8}
-            title="Conteúdo da embalagem"
-            subtitle="Itens que acompanham o produto na entrega."
-            icon={<BoxSvg />}
-          >
-            <DynamicList
-              items={data.packageContent}
-              onChange={(v) => set('packageContent', v)}
-              placeholder='Ex.: 1x Mala de bordo 20"'
-              addLabel="Adicionar item"
-            />
-          </Section>
-
-          {/* 9. Garantia */}
-          <Section
-            number={9}
-            title="Garantia"
-            subtitle="Prazo e cobertura oferecida pela fabricante ou pela loja."
-            icon={<ShieldSvg />}
-          >
-            <textarea
-              rows={2}
-              value={data.warranty}
-              onChange={(e) => set('warranty', e.target.value)}
-              className="field-input"
-              placeholder="Ex.: 12 meses de garantia direta com o fabricante."
-            />
-          </Section>
-
-          {/* 10. FAQ */}
-          <Section
-            number={10}
-            title="Perguntas frequentes"
-            subtitle="Reduza dúvidas comuns antes da compra."
-            icon={<QuestionSvg />}
-          >
-            <FAQList items={data.faq} onChange={(v) => set('faq', v)} />
-          </Section>
-
-          {/* 11. SEO */}
-          <Section
-            number={11}
+          {/* SEO — accordion; abre quando o produto já tem meta editado. */}
+          <Collapsible
             title="SEO"
             subtitle="Como o produto aparece no Google e nas redes sociais."
-            icon={<GlobeSvg />}
+            defaultOpen={Boolean(data.metaTitle || data.metaDescription)}
           >
             <SeoSection
               title={data.metaTitle ?? ''}
@@ -634,11 +561,11 @@ export const ProductForm = ({
               onTitleChange={(v) => set('metaTitle', v)}
               onDescChange={(v) => set('metaDescription', v)}
             />
-          </Section>
+          </Collapsible>
         </div>
 
         {/* ─────── Sidebar ─────── */}
-        <aside className="space-y-6 lg:sticky lg:top-6 lg:h-fit">
+        <aside className="space-y-5 lg:sticky lg:top-6 lg:h-fit">
           <SidebarCard title="Publicação">
             <div className="space-y-2">
               {(
@@ -692,7 +619,7 @@ export const ProductForm = ({
           <SidebarCard title="Organização">
             <div className="grid gap-3">
               <Field
-                label="Categoria"
+                label="Coleção"
                 required
                 compact
                 hint="Obrigatória para publicar."
@@ -709,6 +636,15 @@ export const ProductForm = ({
                     </option>
                   ))}
                 </select>
+              </Field>
+
+              <Field label="Marca" compact hint="Fabricante ou marca própria (opcional).">
+                <input
+                  value={data.brand}
+                  onChange={(e) => set('brand', e.target.value)}
+                  placeholder="Ex.: TravelPro"
+                  className="field-input"
+                />
               </Field>
 
               <Field label="Selo" compact hint="Etiqueta destacada no card do produto.">
@@ -750,8 +686,22 @@ export const ProductForm = ({
                     : margin.status === 'danger'
                       ? 'rose'
                       : undefined;
+              const categoryName =
+                categories.find((c) => c.id === data.categoryId)?.name ?? '—';
+              const statusLabel =
+                data.status === 'ACTIVE'
+                  ? 'Ativo'
+                  : data.status === 'DRAFT'
+                    ? 'Rascunho'
+                    : 'Inativo';
               return (
                 <dl className="grid grid-cols-2 gap-3 text-xs">
+                  <ResumeItem label="Status" value={statusLabel} />
+                  <ResumeItem
+                    label="Coleção"
+                    value={categoryName}
+                    tone={data.categoryId ? undefined : 'amber'}
+                  />
                   <ResumeItem
                     label="Preço"
                     value={data.price > 0 ? formatCurrency(data.price) : '—'}
@@ -779,37 +729,24 @@ export const ProductForm = ({
                     tone={marginTone}
                   />
                   <ResumeItem
-                    label="Desconto"
-                    value={hasDiscount ? `${discountPct}%` : '—'}
-                    tone={hasDiscount ? 'emerald' : undefined}
-                  />
-                  <ResumeItem
                     label="Estoque"
                     value={String(data.stock)}
                     tone={data.stock === 0 ? 'amber' : undefined}
                   />
                   <ResumeItem label="Imagens" value={String(data.images.length)} />
-                  <ResumeItem
-                    label="Benefícios"
-                    value={String(data.benefits.filter(Boolean).length)}
-                  />
-                  <ResumeItem
-                    label="FAQs"
-                    value={String(data.faq.filter((f) => f.question).length)}
-                  />
                 </dl>
               );
             })()}
 
             {missingForPublish && (
               <p className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-[11px] text-amber-800">
-                Para publicar, preencha nome, SKU, categoria e preço. Enquanto
+                Para publicar, preencha nome, SKU, coleção e preço. Enquanto
                 isso, você pode salvar como rascunho a qualquer momento.
               </p>
             )}
             {data.status === 'DRAFT' && (
               <p className="mt-3 rounded-lg bg-ink-100/60 px-3 py-2 text-[11px] text-ink-700">
-                Rascunho: pode ser salvo mesmo sem preço, SKU ou categoria — o
+                Rascunho: pode ser salvo mesmo sem preço, SKU ou coleção — o
                 produto não aparece na loja até você mudar para &ldquo;Ativo&rdquo;.
               </p>
             )}
@@ -828,10 +765,6 @@ export const ProductForm = ({
                   : 'Criar produto'}
             </button>
 
-            {/* Botão "Salvar como rascunho" sempre disponível — força status
-                DRAFT e ignora validação de publicação. Vale tanto pra novo
-                quanto pra edição (útil pra tirar produto do ar sem perder
-                dados). */}
             <button
               type="button"
               disabled={pending}
@@ -855,7 +788,102 @@ export const ProductForm = ({
   );
 };
 
-// ─────────────────────────── Section wrapper ───────────────────────────
+// ─────────────────────────── Card wrapper (Shopify-style) ───────────────────────────
+
+/**
+ * Bloco visual da coluna principal. Sem numeração 01/02 e sem ícone
+ * gigante — só título opcional em negrito e conteúdo. Fica alinhado
+ * com o padrão da tela de produto da Shopify: cards leves e curtos.
+ */
+const Card = ({
+  title,
+  subtitle,
+  action,
+  children,
+}: {
+  title?: string;
+  subtitle?: string;
+  action?: React.ReactNode;
+  children: React.ReactNode;
+}) => (
+  <section className="rounded-xl border border-ink-100 bg-white p-5 shadow-sm">
+    {(title || action) && (
+      <div className="mb-4 flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          {title && <h2 className="text-base font-bold text-ink-900">{title}</h2>}
+          {subtitle && <p className="mt-0.5 text-xs text-ink-500">{subtitle}</p>}
+        </div>
+        {action && <div className="shrink-0">{action}</div>}
+      </div>
+    )}
+    {children}
+  </section>
+);
+
+/**
+ * Accordion controlado internamente. Recebe `defaultOpen` para o form
+ * abrir automaticamente quando o produto ANTIGO já tem dados dentro
+ * (evitando que campos preenchidos sumam da UI). `badge` mostra um
+ * resumo rápido do conteúdo (ex.: "3 benefícios · 2 specs") no header
+ * mesmo com o accordion fechado.
+ */
+const Collapsible = ({
+  title,
+  subtitle,
+  badge,
+  defaultOpen = false,
+  children,
+}: {
+  title: string;
+  subtitle?: string;
+  badge?: string;
+  defaultOpen?: boolean;
+  children: React.ReactNode;
+}) => {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <section className="rounded-xl border border-ink-100 bg-white shadow-sm">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        className="flex w-full items-center justify-between gap-3 rounded-xl px-5 py-4 text-left transition-colors hover:bg-ink-100/40"
+      >
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            <h2 className="text-base font-bold text-ink-900">{title}</h2>
+            {badge && (
+              <span className="rounded-full bg-brand-50 px-2 py-0.5 text-[10px] font-semibold text-brand-700">
+                {badge}
+              </span>
+            )}
+          </div>
+          {subtitle && <p className="mt-0.5 text-xs text-ink-500">{subtitle}</p>}
+        </div>
+        <span
+          aria-hidden
+          className={`shrink-0 text-ink-500 transition-transform ${open ? 'rotate-180' : ''}`}
+        >
+          <svg
+            width="16"
+            height="16"
+            viewBox="0 0 20 20"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <path d="M5 8l5 5 5-5" />
+          </svg>
+        </span>
+      </button>
+      {open && <div className="border-t border-ink-100 px-5 py-5">{children}</div>}
+    </section>
+  );
+};
+
+// ─────────────────────────── Section wrapper (legado, mantido só p/ outras telas eventuais) ───────────────────────────
 
 const Section = ({
   number,
