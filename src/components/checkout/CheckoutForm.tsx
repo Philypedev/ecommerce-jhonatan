@@ -38,18 +38,34 @@ const formatCep = (raw: string) => {
   return d;
 };
 
-const makeInitialData = (payment: PaymentMethod): CheckoutData => ({
-  name: '',
-  phone: '',
+export type CheckoutInitial = {
+  name: string;
+  email: string;
+  phone: string;
+  zipCode: string;
+  street: string;
+  number: string;
+  complement: string;
+  district: string;
+  city: string;
+  state: string;
+};
+
+const makeInitialData = (
+  payment: PaymentMethod,
+  prefill?: CheckoutInitial | null,
+): CheckoutData => ({
+  name: prefill?.name ?? '',
+  phone: prefill?.phone ? formatPhone(prefill.phone) : '',
   document: '',
-  email: '',
-  cep: '',
-  street: '',
-  number: '',
-  complement: '',
-  district: '',
-  city: '',
-  state: '',
+  email: prefill?.email ?? '',
+  cep: prefill?.zipCode ? formatCep(prefill.zipCode) : '',
+  street: prefill?.street ?? '',
+  number: prefill?.number ?? '',
+  complement: prefill?.complement ?? '',
+  district: prefill?.district ?? '',
+  city: prefill?.city ?? '',
+  state: prefill?.state ?? '',
   deliveryType: 'entrega',
   deliveryNote: '',
   payment,
@@ -59,9 +75,10 @@ const makeInitialData = (payment: PaymentMethod): CheckoutData => ({
 type Props = {
   whatsappNumber: string;
   activePayments?: string[];
+  initial?: CheckoutInitial | null;
 };
 
-export const CheckoutForm = ({ whatsappNumber, activePayments }: Props) => {
+export const CheckoutForm = ({ whatsappNumber, activePayments, initial }: Props) => {
   const paymentOptions =
     activePayments && activePayments.length > 0
       ? ALL_PAYMENT_OPTIONS.filter((o) => activePayments.includes(o.value))
@@ -70,7 +87,7 @@ export const CheckoutForm = ({ whatsappNumber, activePayments }: Props) => {
   const defaultPayment = (paymentOptions[0]?.value ?? 'pix') as PaymentMethod;
   const lines = useCart((s) => s.lines);
   const hydrated = useCart((s) => s.hydrated);
-  const [form, setForm] = useState<CheckoutData>(() => makeInitialData(defaultPayment));
+  const [form, setForm] = useState<CheckoutData>(() => makeInitialData(defaultPayment, initial));
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();

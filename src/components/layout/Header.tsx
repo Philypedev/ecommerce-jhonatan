@@ -12,6 +12,7 @@ import {
   WhatsAppIcon,
   TruckIcon,
   HeadsetIcon,
+  UserIcon,
 } from '@/components/ui/Icon';
 import { useCart, cartItemsCount } from '@/store/cart';
 import type { SiteRuntimeConfig } from '@/lib/db/settings';
@@ -20,12 +21,15 @@ import { HeaderSearch } from './HeaderSearch';
 
 export type HeaderCategoryLink = { slug: string; name: string; highlight?: boolean };
 
+export type HeaderCustomer = { firstName: string } | null;
+
 type Props = {
   config: SiteRuntimeConfig;
   categories: HeaderCategoryLink[];
+  customer?: HeaderCustomer;
 };
 
-export const Header = ({ config, categories }: Props) => {
+export const Header = ({ config, categories, customer = null }: Props) => {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const lines = useCart((s) => s.lines);
@@ -121,6 +125,30 @@ export const Header = ({ config, categories }: Props) => {
           >
             <SearchIcon />
           </button>
+
+          {customer ? (
+            <Link
+              href="/conta"
+              className="hidden h-10 items-center gap-1 rounded-md px-2 text-sm font-semibold text-ink-900 hover:bg-ink-100 sm:inline-flex"
+              aria-label={`Minha conta — ${customer.firstName}`}
+              title="Minha conta"
+            >
+              <UserIcon size={18} />
+              <span className="hidden md:inline max-w-[9ch] truncate">
+                {customer.firstName}
+              </span>
+            </Link>
+          ) : (
+            <Link
+              href="/conta/entrar"
+              className="hidden h-10 items-center gap-1 rounded-md px-2 text-sm font-semibold text-ink-900 hover:bg-ink-100 sm:inline-flex"
+              aria-label="Entrar na sua conta"
+              title="Entrar"
+            >
+              <UserIcon size={18} />
+              <span className="hidden md:inline">Entrar</span>
+            </Link>
+          )}
 
           <a
             href={`https://wa.me/${config.whatsapp}`}
@@ -236,6 +264,49 @@ export const Header = ({ config, categories }: Props) => {
               className="flex-1 overflow-y-auto overscroll-contain bg-white"
               aria-label="Navegação principal"
             >
+              {/* 0) Minha conta — link "Entrar" quando não logado, ou
+                     nome do cliente + acesso ao hub quando logado. Fica
+                     no topo do drawer pra ser descoberto sem rolagem. */}
+              <MobileSection title="Minha conta">
+                {customer ? (
+                  <>
+                    <MobileLink
+                      href="/conta"
+                      label={`Minha conta · ${customer.firstName}`}
+                      active={isActive('/conta')}
+                      onClose={closeMobile}
+                    />
+                    <MobileLink
+                      href="/conta/pedidos"
+                      label="Meus pedidos"
+                      active={isActive('/conta/pedidos')}
+                      onClose={closeMobile}
+                    />
+                    <MobileLink
+                      href="/conta/enderecos"
+                      label="Meus endereços"
+                      active={isActive('/conta/enderecos')}
+                      onClose={closeMobile}
+                    />
+                  </>
+                ) : (
+                  <>
+                    <MobileLink
+                      href="/conta/entrar"
+                      label="Entrar"
+                      active={isActive('/conta/entrar')}
+                      onClose={closeMobile}
+                    />
+                    <MobileLink
+                      href="/conta/criar"
+                      label="Criar conta"
+                      active={isActive('/conta/criar')}
+                      onClose={closeMobile}
+                    />
+                  </>
+                )}
+              </MobileSection>
+
               {/* 1) Coleções — só renderiza se houver categorias ativas.
                      Prioridade máxima no menu mobile: usuário abre pra
                      descobrir onde comprar. */}

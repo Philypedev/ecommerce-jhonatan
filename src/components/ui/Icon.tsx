@@ -178,3 +178,10 @@ export const YoutubeIcon = ({ size = 18, ...p }: IconProps) => (
     <path d="M22 8.2a3 3 0 0 0-2.1-2.2C18 5.5 12 5.5 12 5.5s-6 0-7.9.5A3 3 0 0 0 2 8.2 31 31 0 0 0 1.6 12c0 1.3.1 2.5.4 3.8a3 3 0 0 0 2.1 2.2c1.9.5 7.9.5 7.9.5s6 0 7.9-.5a3 3 0 0 0 2.1-2.2c.3-1.3.4-2.5.4-3.8s-.1-2.5-.4-3.8ZM10 15V9l5.2 3L10 15Z" />
   </svg>
 );
+
+export const UserIcon = ({ size = 22, ...p }: IconProps) => (
+  <svg {...base(size)} {...p}>
+    <path d="M20 21a8 8 0 0 0-16 0" />
+    <circle cx="12" cy="7" r="4" />
+  </svg>
+);

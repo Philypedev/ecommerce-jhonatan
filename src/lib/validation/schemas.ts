@@ -253,6 +253,63 @@ export const checkoutSchema = z.object({
     .min(1, 'Carrinho vazio'),
 });
 
+// ─────────────────────────── Conta do cliente (ecommerce) ───────────────────────────
+// Schemas dedicados — sem reuso do `loginSchema` do admin para deixar as
+// mensagens de erro na tela pública com tom neutro (nada de "sessão
+// administrativa") e para permitir evoluir a política de senha do cliente
+// separadamente da do admin.
+
+export const customerSignupSchema = z
+  .object({
+    name: z.string().trim().min(2, 'Informe seu nome completo'),
+    email: z.string().trim().toLowerCase().email('E-mail inválido'),
+    phone: z
+      .string()
+      .trim()
+      .max(20)
+      .optional()
+      .transform((v) => (v ? v : '')),
+    password: z.string().min(6, 'A senha precisa ter ao menos 6 caracteres'),
+    confirmPassword: z.string().min(1, 'Confirme sua senha'),
+  })
+  .refine((d) => d.password === d.confirmPassword, {
+    message: 'A confirmação não confere com a senha',
+    path: ['confirmPassword'],
+  });
+export type CustomerSignupInput = z.infer<typeof customerSignupSchema>;
+
+export const customerLoginSchema = z.object({
+  email: z.string().trim().toLowerCase().email('E-mail inválido'),
+  password: z.string().min(1, 'Informe sua senha'),
+});
+export type CustomerLoginInput = z.infer<typeof customerLoginSchema>;
+
+const UF_LIST = [
+  'AC','AL','AP','AM','BA','CE','DF','ES','GO','MA','MT','MS','MG','PA','PB','PR','PE','PI','RJ','RN','RS','RO','RR','SC','SP','SE','TO',
+] as const;
+
+export const customerAddressSchema = z.object({
+  label: z.string().trim().max(60).optional().transform((v) => v ?? ''),
+  // CEP: aceita entrada com máscara ("01310-100") ou só dígitos ("01310100").
+  // Regex confere as duas formas E o refine cheque que sobrem exatamente 8
+  // dígitos após limpar — fecha o buraco de aceitar "AAAAAAAA" (que passa
+  // .min(8) porque tem 8 chars, mas depois vira "" após o replace(/\D/g)).
+  zipCode: z
+    .string()
+    .trim()
+    .refine((v) => v.replace(/\D/g, '').length === 8, {
+      message: 'CEP deve ter 8 dígitos.',
+    }),
+  street: z.string().trim().min(2, 'Informe a rua'),
+  number: z.string().trim().min(1, 'Informe o número'),
+  complement: z.string().trim().max(120).optional().transform((v) => v ?? ''),
+  district: z.string().trim().max(120).optional().transform((v) => v ?? ''),
+  city: z.string().trim().min(2, 'Informe a cidade'),
+  state: z.enum(UF_LIST, { errorMap: () => ({ message: 'UF inválida' }) }),
+  isDefault: z.coerce.boolean().optional().default(false),
+});
+export type CustomerAddressInput = z.infer<typeof customerAddressSchema>;
+
 export const homeBannerSchema = z.object({
   internalName: z.string().max(120).default(''),
   // Título/subtítulo/botão são opcionais — muitos banners já vêm com texto

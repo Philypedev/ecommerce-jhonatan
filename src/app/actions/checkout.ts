@@ -7,6 +7,7 @@ import {
   markSessionConverted,
   markLatestSessionByVisitorConverted,
 } from '@/lib/db/visitors';
+import { getCustomerSession } from '@/lib/customer-auth';
 import type { CheckoutData } from '@/types';
 
 type CartItemInput = { productId: string; quantity: number; variantId?: string };
@@ -108,6 +109,10 @@ export async function saveLeadOrderAction(
     }));
     const whatsappMessage = buildCheckoutMessageFromLines(data, waLines);
 
+    // Vincula ao Customer se houver sessão de cliente ativa. Guest continua
+    // funcionando: `customerId` fica null e o pedido é gravado normalmente.
+    const customerSession = await getCustomerSession().catch(() => null);
+
     const order = await prisma.leadOrder.create({
       data: {
         customerName: data.name,
@@ -128,6 +133,7 @@ export async function saveLeadOrderAction(
         total: subtotal,
         whatsappMessage,
         status: 'NOVO',
+        customerId: customerSession?.cid ?? null,
         items: {
           create: lineItems.map((li) => ({
             productId: li.productId,

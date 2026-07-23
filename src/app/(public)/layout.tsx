@@ -1,6 +1,7 @@
 import { siteConfig as fallbackConfig } from '@/config/site';
 import { getStoreSettings, settingsToSiteConfig } from '@/lib/db/settings';
 import { getFooterCategories, getMenuCategories } from '@/lib/db/categories';
+import { getCustomerSession } from '@/lib/customer-auth';
 import { Header } from '@/components/layout/Header';
 import { Footer } from '@/components/layout/Footer';
 import { FloatingWhatsAppButton } from '@/components/layout/FloatingWhatsAppButton';
@@ -15,6 +16,16 @@ export default async function PublicLayout({ children }: { children: React.React
   let runtime: ReturnType<typeof settingsToSiteConfig>;
   let menuCats: CatLink[] = [];
   let footerCats: CatLink[] = [];
+
+  // Sessão de cliente (não-admin). Chave em `customer_session` cookie.
+  // Se não houver ou o token for inválido, `session` fica null e o header
+  // renderiza o link "Entrar" ao invés de "Minha conta".
+  const customerSession = await getCustomerSession().catch(() => null);
+  const headerCustomer = customerSession
+    ? {
+        firstName: (customerSession.name || customerSession.email).split(' ')[0] || 'Conta',
+      }
+    : null;
 
   try {
     // getMenuCategories / getFooterCategories já filtram: categoria ACTIVE
@@ -75,7 +86,7 @@ export default async function PublicLayout({ children }: { children: React.React
       >
         Pular para o conteúdo
       </a>
-      <Header config={runtime} categories={menuCats} />
+      <Header config={runtime} categories={menuCats} customer={headerCustomer} />
       <main id="main">{children}</main>
       <Footer config={runtime} categories={footerCats} />
       <FloatingWhatsAppButton whatsapp={runtime.whatsapp} />
