@@ -6,10 +6,12 @@ import { isUsingDefaultPassword } from '@/app/actions/account';
 import { getStoreSettings } from '@/lib/db/settings';
 import { listPageContents } from '@/lib/db/pages';
 import {
+  conversionRateLabel,
   countActiveVisitors,
   countConvertedSessionsToday,
   countSessionsToday,
 } from '@/lib/db/visitors';
+import { startOfStoreDay } from '@/lib/storeTime';
 import {
   REQUIRED_PAGE_SLUGS,
   allRequiredPagesPublished,
@@ -159,8 +161,9 @@ const SectionTitle = ({ children, hint }: { children: React.ReactNode; hint?: st
 export default async function AdminOverviewPage() {
   const session = await requireAdmin();
 
-  const startOfDay = new Date();
-  startOfDay.setHours(0, 0, 0, 0);
+  // "Hoje" é o dia civil em America/Sao_Paulo, não o horário local do
+  // processo (em produção o container roda em UTC) — ver src/lib/storeTime.ts.
+  const startOfDay = startOfStoreDay();
 
   const [
     // Sessões / visitantes (todos do banco real)
@@ -186,9 +189,9 @@ export default async function AdminOverviewPage() {
     pageContents,
     isDefaultPassword,
   ] = await Promise.all([
-    countActiveVisitors(),
-    countSessionsToday(),
-    countConvertedSessionsToday(),
+    countActiveVisitors().catch(() => 0),
+    countSessionsToday().catch(() => 0),
+    countConvertedSessionsToday().catch(() => 0),
     prisma.leadOrder.count({ where: { createdAt: { gte: startOfDay } } }),
     prisma.leadOrder.count({ where: { status: 'NOVO' } }),
     // Valor estimado é DE HOJE — para ficar coerente com "Pedidos hoje" e
@@ -235,8 +238,7 @@ export default async function AdminOverviewPage() {
 
   const estimatedTodayValue = ordersTodayAggregate._sum.total ?? 0;
   const sessionsWithoutOrder = Math.max(0, sessionsToday - convertedToday);
-  const conversionRate =
-    sessionsToday > 0 ? Math.round((convertedToday / sessionsToday) * 1000) / 10 : 0;
+  const conversionLabel = conversionRateLabel(sessionsToday, convertedToday);
 
   // ───── checks de configuração reais (não confiam em seed defaults) ─────
   const whatsappConfigured = isRealWhatsapp(settings?.whatsappNumber);
@@ -323,8 +325,17 @@ export default async function AdminOverviewPage() {
           <StatCard label="Sessões hoje" value={sessionsToday} hint="Entraram na loja hoje" />
           <StatCard label="Sessões sem pedido" value={sessionsWithoutOrder} hint="Entraram, mas não finalizaram" tone={sessionsWithoutOrder > 0 ? 'warning' : undefined} />
           <StatCard label="Pedidos hoje" value={ordersToday} hint="Pedidos enviados pelo site" />
-          <StatCard label="Valor estimado" value={formatCurrency(estimatedTodayValue)} hint="Soma dos pedidos de hoje" />
-          <StatCard label="Taxa de conversão" value={`${conversionRate}%`} hint="Sessões que viraram pedido" tone={conversionRate > 0 ? 'success' : undefined} />
+          <StatCard
+            label="Valor em pedidos hoje"
+            value={formatCurrency(estimatedTodayValue)}
+            hint="Soma dos pedidos de hoje — intenção de compra via WhatsApp, não é faturamento confirmado"
+          />
+          <StatCard
+            label="Taxa de conversão"
+            value={conversionLabel}
+            hint="Sessões de hoje que viraram pedido"
+            tone={conversionLabel !== '—' && conversionLabel !== '0%' ? 'success' : undefined}
+          />
         </div>
       </section>
 

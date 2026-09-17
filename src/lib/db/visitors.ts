@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { prisma } from '@/lib/prisma';
+import { startOfStoreDay } from '@/lib/storeTime';
 
 /**
  * Helpers para o tracking de VisitorSession.
@@ -12,10 +13,9 @@ import { prisma } from '@/lib/prisma';
  *    (sendBeacon) desliga. Combinado com janela curta de lastSeenAt, mantém
  *    "Visitantes agora" próximo do tempo real.
  *
- * Como o model foi alterado via `prisma db push --skip-generate`, o Prisma
- * Client em runtime ainda não conhece `prisma.visitorSession`. Por isso
- * usamos `$executeRaw` e `$queryRaw` paramétricos (Prisma sanitiza os
- * placeholders).
+ * Usa `$executeRaw`/`$queryRaw` paramétricos (Prisma sanitiza os
+ * placeholders) para os upserts condicionais (COALESCE mantém o valor
+ * anterior quando o client não manda um campo).
  */
 
 export type ActiveVisitor = {
@@ -33,11 +33,9 @@ export type ActiveVisitor = {
 const ACTIVE_WINDOW_SECONDS = 90;
 export const ACTIVE_WINDOW_MS = ACTIVE_WINDOW_SECONDS * 1000;
 
-const startOfTodayLocal = (): Date => {
-  const d = new Date();
-  d.setHours(0, 0, 0, 0);
-  return d;
-};
+// "Hoje" é o dia civil da loja (America/Sao_Paulo), não o horário local do
+// processo — ver src/lib/storeTime.ts.
+const startOfTodayLocal = (): Date => startOfStoreDay();
 
 /**
  * Cria a sessão se não existir (chave: sessionId); senão atualiza
@@ -221,3 +219,11 @@ export const getActiveVisitors = async (limit = 12): Promise<ActiveVisitor[]> =>
     lastSeenAt: typeof r.lastSeenAt === 'string' ? new Date(r.lastSeenAt) : r.lastSeenAt,
   }));
 };
+
+/**
+ * Rótulo de taxa de conversão para o dashboard: sessões de hoje que viraram
+ * pedido / sessões de hoje. Sem sessões hoje não dá pra calcular uma
+ * conversão — retorna "—" em vez de inventar 0%.
+ */
+export const conversionRateLabel = (sessionsToday: number, convertedToday: number): string =>
+  sessionsToday > 0 ? `${Math.round((convertedToday / sessionsToday) * 1000) / 10}%` : '—';
