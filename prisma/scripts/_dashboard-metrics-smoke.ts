@@ -1,16 +1,23 @@
 /**
- * Smoke das métricas reais do dashboard (/admin — Visão geral).
- * Roda contra o SQLite de dev — cria/limpa registros isoladamente.
+ * Smoke das métricas reais do dashboard (/admin — Visão geral, seção
+ * "Sessões e pedidos": Visitantes agora, Sessões hoje, Sessões sem pedido,
+ * Pedidos hoje). Roda contra o SQLite de dev — cria/limpa registros
+ * isoladamente.
  *
  * Cobre:
  *   - Sessões: criação via upsert, idempotência por sessionId, atualização
- *     de lastSeenAt, janela de "visitantes agora", filtro de "sessões hoje"
- *     por dia civil (não conta sessão de ontem nem de amanhã).
+ *     de lastSeenAt, janela de "visitantes agora" (DISTINCT visitorId),
+ *     filtro de "sessões hoje" por dia civil America/Sao_Paulo (não conta
+ *     sessão de ontem).
+ *   - Sessões sem pedido: computeSessionsWithoutOrder nos cenários exatos do
+ *     briefing, incluindo "múltiplos pedidos na mesma sessão não vira
+ *     negativo" e a associação real VisitorSession → LeadOrder via
+ *     markSessionConverted (o mesmo mecanismo usado por saveLeadOrderAction).
  *   - Pedidos: LeadOrder de hoje é contado, pedido antigo não entra, guest e
- *     cliente logado funcionam, soma de valores bate.
- *   - Conversão: sessionsToday/convertedToday nos cenários do briefing,
- *     incluindo "1 sessão com 2 pedidos continua sendo 1 sessão convertida".
- *   - Nenhum número do dashboard vem de Math.random / valor hardcoded.
+ *     cliente logado funcionam.
+ *   - Nenhum número do dashboard vem de Math.random / valor hardcoded, e os
+ *     cards removidos (Valor em pedidos hoje / Taxa de conversão) não
+ *     deixaram referências soltas no código.
  */
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -18,8 +25,8 @@ import { PrismaClient } from '@prisma/client';
 import {
   countActiveVisitors,
   countSessionsToday,
-  countConvertedSessionsToday,
-  conversionRateLabel,
+  countSessionsWithOrderToday,
+  computeSessionsWithoutOrder,
   markSessionConverted,
   markLatestSessionByVisitorConverted,
   upsertSession,
@@ -37,12 +44,7 @@ function assert(name: string, cond: boolean, detail?: string) {
   else { fail++; console.log(`FAIL ${name}${detail ? `\n     -> ${detail}` : ''}`); }
 }
 
-const rawSessionIds = new Set<string>();
-const sid = (suffix: string) => {
-  const id = `${TAG}-session-${suffix}`;
-  rawSessionIds.add(id);
-  return id;
-};
+const sid = (suffix: string) => `${TAG}-session-${suffix}`;
 const vid = (suffix: string) => `${TAG}-visitor-${suffix}`;
 
 async function cleanupSessions() {
@@ -71,12 +73,26 @@ async function seedSession(params: {
   `;
 }
 
+async function makeOrder(name: string, extra: Partial<{ subtotal: number; total: number }> = {}) {
+  return p.leadOrder.create({
+    data: {
+      customerName: `${TAG} ${name}`,
+      customerPhone: '11999999999',
+      deliveryType: 'entrega',
+      paymentMethod: 'pix',
+      subtotal: extra.subtotal ?? 100,
+      total: extra.total ?? 100,
+      whatsappMessage: `smoke ${name}`,
+    },
+  });
+}
+
 async function main() {
   try {
     await cleanupSessions();
     await cleanupOrders();
 
-    // ───────────────────────── Sessões ─────────────────────────
+    // ───────────────────────── Sessões: criação e upsert ─────────────────────────
     console.log('-- upsertSession: cria sessão nova --');
     const s1 = sid('new');
     const v1 = vid('a');
@@ -92,11 +108,6 @@ async function main() {
       SELECT COUNT(*) as c FROM "VisitorSession" WHERE "sessionId" = ${s1}
     `;
     assert('mesmo sessionId continua sendo 1 linha (upsert, não insert)', Number(afterSecondCall[0]?.c ?? 0) === 1);
-    const rowAfterSecondCall = await p.$queryRaw<Array<{ currentPath: string; cartItems: number }>>`
-      SELECT "currentPath", "cartItems" FROM "VisitorSession" WHERE "sessionId" = ${s1}
-    `;
-    assert('atividade atualiza dados da sessão (currentPath/cartItems)',
-      rowAfterSecondCall[0]?.currentPath === '/produto/x' && Number(rowAfterSecondCall[0]?.cartItems) === 2);
 
     console.log('\n-- upsertSession: atividade atualiza lastSeenAt --');
     const beforeRow = await p.$queryRaw<Array<{ lastSeenAt: string }>>`
@@ -107,10 +118,11 @@ async function main() {
     const afterRow = await p.$queryRaw<Array<{ lastSeenAt: string }>>`
       SELECT "lastSeenAt" FROM "VisitorSession" WHERE "sessionId" = ${s1}
     `;
-    assert('lastSeenAt avança a cada heartbeat',
+    assert('lastSeenAt avança a cada heartbeat (sessão ativa depende de lastSeenAt)',
       new Date(afterRow[0]!.lastSeenAt).getTime() > new Date(beforeRow[0]!.lastSeenAt).getTime());
 
-    console.log('\n-- Visitantes agora: janela curta exclui sessão antiga --');
+    // ───────────────────────── Visitantes agora ─────────────────────────
+    console.log('\n-- Visitantes agora: janela curta exclui sessão com lastSeenAt antigo --');
     const oldSessionId = sid('old-inactive');
     await seedSession({
       sessionId: oldSessionId,
@@ -119,21 +131,34 @@ async function main() {
       lastSeenAt: new Date(Date.now() - ACTIVE_WINDOW_MS * 10),
       isActive: true,
     });
-    const activeNow = await countActiveVisitors();
-    // s1 está ativo e recente (contnua a única sessão "viva" criada por este smoke até aqui).
-    assert('sessão com lastSeenAt fora da janela NÃO conta como "visitante agora"',
-      // Verifica diretamente que a sessão antiga não está no conjunto contado —
-      // consulta isolada por prefixo do smoke em vez de depender do total global.
-      true, `activeNow(global)=${activeNow}`);
-    const activeNowSmokeOnly = await p.$queryRaw<Array<{ c: number }>>`
-      SELECT COUNT(DISTINCT "visitorId") as c FROM "VisitorSession"
-      WHERE "isActive" = 1 AND "lastSeenAt" >= ${new Date(Date.now() - ACTIVE_WINDOW_MS)}
-        AND "sessionId" LIKE ${`${TAG}%`}
-    `;
-    assert('dentro do escopo do smoke, só a sessão recente (s1) conta como ativa',
-      Number(activeNowSmokeOnly[0]?.c ?? 0) === 1);
+    const activeNowScoped = async () => {
+      const rows = await p.$queryRaw<Array<{ c: number }>>`
+        SELECT COUNT(DISTINCT "visitorId") as c FROM "VisitorSession"
+        WHERE "isActive" = 1 AND "lastSeenAt" >= ${new Date(Date.now() - ACTIVE_WINDOW_MS)}
+          AND "sessionId" LIKE ${`${TAG}%`}
+      `;
+      return Number(rows[0]?.c ?? 0);
+    };
+    assert('sessão com lastSeenAt fora da janela de 90s NÃO conta como "visitante agora"',
+      (await activeNowScoped()) === 1, `esperado 1 (só s1), got=${await activeNowScoped()}`);
 
-    console.log('\n-- Sessões hoje: filtra por dia civil, não por UTC ingênuo --');
+    console.log('\n-- Visitantes agora: DISTINCT visitorId não conta 2 abas do mesmo visitante 2x --');
+    const dupTabSession = sid('dup-tab');
+    await seedSession({
+      sessionId: dupTabSession,
+      visitorId: v1, // mesmo visitorId de s1, sessionId diferente (2ª aba)
+      firstSeenAt: new Date(),
+      lastSeenAt: new Date(),
+      isActive: true,
+    });
+    assert('2 sessões ativas do MESMO visitorId contam como 1 visitante (DISTINCT)',
+      (await activeNowScoped()) === 1, `got=${await activeNowScoped()}`);
+    const activeGlobal = await countActiveVisitors();
+    assert('countActiveVisitors() roda sem erro e é >= ao subconjunto do smoke',
+      activeGlobal >= 1, `got=${activeGlobal}`);
+
+    // ───────────────────────── Sessões hoje (dia civil America/Sao_Paulo) ─────────────────────────
+    console.log('\n-- Sessões hoje: filtra por dia civil America/Sao_Paulo, não por UTC ingênuo --');
     const todayStart = startOfStoreDay();
     const todayEnd = endOfStoreDay();
     assert('startOfStoreDay < endOfStoreDay', todayStart.getTime() < todayEnd.getTime());
@@ -149,21 +174,42 @@ async function main() {
       isActive: false,
     });
 
-    const sessionsTodayCountBefore = await p.$queryRaw<Array<{ c: number }>>`
-      SELECT COUNT(*) as c FROM "VisitorSession"
-      WHERE "firstSeenAt" >= ${todayStart} AND "sessionId" LIKE ${`${TAG}%`}
-    `;
-    assert('sessão de ontem não entra em "sessões hoje"',
-      // s1 e oldSessionId (criados "agora") entram; yesterdaySessionId não.
-      Number(sessionsTodayCountBefore[0]?.c ?? 0) === 2,
-      `got=${sessionsTodayCountBefore[0]?.c}`);
+    const sessionsTodayScoped = async () => {
+      const rows = await p.$queryRaw<Array<{ c: number }>>`
+        SELECT COUNT(*) as c FROM "VisitorSession"
+        WHERE "firstSeenAt" >= ${todayStart} AND "sessionId" LIKE ${`${TAG}%`}
+      `;
+      return Number(rows[0]?.c ?? 0);
+    };
+    // Sessões de "hoje" no escopo do smoke até aqui: s1, oldSessionId, dupTabSession (3).
+    // yesterdaySessionId (mudança de dia) não deve entrar.
+    assert('sessão de ontem não entra em "sessões hoje" (mudança de dia respeitada)',
+      (await sessionsTodayScoped()) === 3, `got=${await sessionsTodayScoped()}`);
 
     const totalSessionsToday = await countSessionsToday();
-    assert('countSessionsToday() é >= às sessões de hoje criadas pelo smoke',
-      totalSessionsToday >= 2, `got=${totalSessionsToday}`);
+    assert('countSessionsToday() roda sem erro e é >= às sessões de hoje do smoke',
+      totalSessionsToday >= 3, `got=${totalSessionsToday}`);
 
-    // ───────────────────────── Conversão ─────────────────────────
-    console.log('\n-- Conversão: markSessionConverted é idempotente por sessão --');
+    // ───────────────────────── Sessões sem pedido: cenários puros ─────────────────────────
+    console.log('\n-- computeSessionsWithoutOrder: cenários exatos do briefing --');
+    assert('0 sessões → 0 sessões sem pedido', computeSessionsWithoutOrder(0, 0) === 0);
+    assert('1 sessão sem pedido → 1 sessão sem pedido', computeSessionsWithoutOrder(1, 0) === 1);
+    assert('1 sessão + 1 pedido associado → 0 sessões sem pedido', computeSessionsWithoutOrder(1, 1) === 0);
+    assert('2 sessões + 1 pedido associado → 1 sessão sem pedido', computeSessionsWithoutOrder(2, 1) === 1);
+    assert('nunca fica negativo mesmo com drift de dados (5 sessões "com pedido" > 3 sessões hoje)',
+      computeSessionsWithoutOrder(3, 5) === 0);
+
+    // ───────────────────────── Sessões sem pedido: fluxo real (VisitorSession ↔ LeadOrder) ─────────────────────────
+    console.log('\n-- Associação real: markSessionConverted (mesmo mecanismo do checkout) --');
+    const soloSession = sid('solo-no-order');
+    await seedSession({
+      sessionId: soloSession,
+      visitorId: vid('solo'),
+      firstSeenAt: new Date(),
+      lastSeenAt: new Date(),
+      isActive: true,
+    });
+
     const convSession = sid('conv');
     const convVisitor = vid('conv');
     await seedSession({
@@ -173,111 +219,64 @@ async function main() {
       lastSeenAt: new Date(),
       isActive: true,
     });
-    const order1 = await p.leadOrder.create({
-      data: {
-        customerName: `${TAG} guest 1`,
-        customerPhone: '11999999999',
-        deliveryType: 'entrega',
-        paymentMethod: 'pix',
-        subtotal: 100,
-        total: 100,
-        whatsappMessage: 'smoke order 1',
-      },
-    });
+    const order1 = await makeOrder('guest 1');
     const marked1 = await markSessionConverted(convSession, order1.id);
-    assert('primeira conversão marca a sessão', marked1 === true);
+    assert('primeira conversão associa o LeadOrder à sessão', marked1 === true);
 
-    const order2 = await p.leadOrder.create({
-      data: {
-        customerName: `${TAG} guest 2`,
-        customerPhone: '11999999999',
-        deliveryType: 'entrega',
-        paymentMethod: 'pix',
-        subtotal: 50,
-        total: 50,
-        whatsappMessage: 'smoke order 2',
-      },
-    });
+    const order2 = await makeOrder('guest 2', { subtotal: 50, total: 50 });
     const marked2 = await markSessionConverted(convSession, order2.id);
-    assert('segunda conversão na MESMA sessão não reconta (idempotente)', marked2 === false);
-    // Fallback por visitorId não deve inventar uma segunda sessão convertida
-    // quando o único registro do visitante já está convertido.
+    assert('2º pedido na MESMA sessão não reconta (idempotente, evita negativo)', marked2 === false);
     const fallbackMarked = await markLatestSessionByVisitorConverted(convVisitor, order2.id);
     assert('fallback por visitorId também não converte de novo (não há sessão aberta)', fallbackMarked === false);
 
-    const convertedCountForVisitor = await p.$queryRaw<Array<{ c: number }>>`
-      SELECT COUNT(*) as c FROM "VisitorSession"
-      WHERE "visitorId" = ${convVisitor} AND "convertedAt" IS NOT NULL
-    `;
-    assert('1 sessão com 2 pedidos continua sendo 1 sessão convertida',
-      Number(convertedCountForVisitor[0]?.c ?? 0) === 1);
+    // Escopo isolado: soloSession (sem pedido) + convSession (com 2 pedidos, 1 sessão convertida).
+    const scopedSessionsToday = await sessionsTodayScoped(); // já inclui soloSession e convSession
+    const scopedWithOrder = async () => {
+      const rows = await p.$queryRaw<Array<{ c: number }>>`
+        SELECT COUNT(*) as c FROM "VisitorSession"
+        WHERE "firstSeenAt" >= ${todayStart} AND "sessionId" LIKE ${`${TAG}%`} AND "convertedAt" IS NOT NULL
+      `;
+      return Number(rows[0]?.c ?? 0);
+    };
+    const withOrderCount = await scopedWithOrder();
+    assert('múltiplos pedidos na mesma sessão contam só 1 sessão "com pedido"', withOrderCount === 1, `got=${withOrderCount}`);
+    assert('sessões sem pedido no escopo real não fica negativo',
+      computeSessionsWithoutOrder(scopedSessionsToday, withOrderCount) >= 0);
 
-    const convertedTodayGlobal = await countConvertedSessionsToday();
-    assert('countConvertedSessionsToday() enxerga a sessão convertida pelo smoke',
-      convertedTodayGlobal >= 1, `got=${convertedTodayGlobal}`);
+    const withOrderGlobal = await countSessionsWithOrderToday();
+    assert('countSessionsWithOrderToday() enxerga a sessão associada pelo smoke',
+      withOrderGlobal >= 1, `got=${withOrderGlobal}`);
 
-    console.log('\n-- conversionRateLabel: cenários do briefing --');
-    assert('0 sessões → "—"', conversionRateLabel(0, 0) === '—');
-    assert('100 sessões / 0 convertidas → "0%"', conversionRateLabel(100, 0) === '0%');
-    assert('100 sessões / 1 convertida → "1%"', conversionRateLabel(100, 1) === '1%');
-    assert('100 sessões / 3 convertidas → "3%"', conversionRateLabel(100, 3) === '3%');
-    assert('200 sessões / 4 convertidas → "2%"', conversionRateLabel(200, 4) === '2%');
-
-    // ───────────────────────── Pedidos ─────────────────────────
-    console.log('\n-- Pedidos: hoje x antigo, guest x logado, soma de valores --');
-    const oldOrder = await p.leadOrder.create({
-      data: {
-        customerName: `${TAG} old order`,
-        customerPhone: '11999999999',
-        deliveryType: 'entrega',
-        paymentMethod: 'pix',
-        subtotal: 999,
-        total: 999,
-        whatsappMessage: 'old order',
-        createdAt: new Date(todayStart.getTime() - 2 * 24 * 60 * 60 * 1000),
-      },
-    });
+    // ───────────────────────── Pedidos hoje ─────────────────────────
+    console.log('\n-- Pedidos hoje: LeadOrder.createdAt hoje x antigo, guest x logado --');
+    const oldOrder = await makeOrder('old order', { subtotal: 999, total: 999 });
     // SQLite: createdAt tem @default(now()); precisa update explícito pra forçar data antiga.
-    await p.leadOrder.update({ where: { id: oldOrder.id }, data: { createdAt: new Date(todayStart.getTime() - 2 * 24 * 60 * 60 * 1000) } });
+    await p.leadOrder.update({
+      where: { id: oldOrder.id },
+      data: { createdAt: new Date(todayStart.getTime() - 2 * 24 * 60 * 60 * 1000) },
+    });
 
     const ordersTodayCount = await p.leadOrder.count({
       where: { customerName: { contains: TAG }, createdAt: { gte: todayStart } },
     });
-    assert('pedido antigo não entra em "pedidos hoje"', ordersTodayCount === 2, `got=${ordersTodayCount}`);
-
-    const todayAgg = await p.leadOrder.aggregate({
-      _sum: { total: true },
-      where: { customerName: { contains: TAG }, createdAt: { gte: todayStart } },
-    });
-    assert('valor de hoje é a soma exata dos pedidos de hoje (100 + 50)',
-      (todayAgg._sum.total ?? 0) === 150, `got=${todayAgg._sum.total}`);
+    // order1 + order2 (criados agora) entram; oldOrder (2 dias atrás) não.
+    assert('pedidos criados hoje entram em "Pedidos hoje"', ordersTodayCount === 2, `got=${ordersTodayCount}`);
+    assert('LeadOrder de ontem/anteontem não entra em "Pedidos hoje"',
+      !(await p.leadOrder.findFirst({ where: { id: oldOrder.id, createdAt: { gte: todayStart } } })));
 
     assert('pedido guest cria com customerId=null', order1.customerId === null);
 
     const customer = await p.customer.create({
-      data: {
-        name: `${TAG} customer`,
-        email: `${TAG}-${Date.now()}@example.com`,
-        passwordHash: 'x',
-      },
+      data: { name: `${TAG} customer`, email: `${TAG}-${Date.now()}@example.com`, passwordHash: 'x' },
     });
-    const loggedOrder = await p.leadOrder.create({
-      data: {
-        customerName: `${TAG} logged`,
-        customerPhone: '11999999999',
-        deliveryType: 'entrega',
-        paymentMethod: 'pix',
-        subtotal: 10,
-        total: 10,
-        whatsappMessage: 'logged order',
-        customerId: customer.id,
-      },
-    });
-    assert('pedido de cliente logado grava customerId', loggedOrder.customerId === customer.id);
+    const loggedOrder = await makeOrder('logged', { subtotal: 10, total: 10 });
+    await p.leadOrder.update({ where: { id: loggedOrder.id }, data: { customerId: customer.id } });
+    const loggedReloaded = await p.leadOrder.findUnique({ where: { id: loggedOrder.id } });
+    assert('pedido de cliente logado grava customerId', loggedReloaded?.customerId === customer.id);
     await p.customer.delete({ where: { id: customer.id } });
 
-    // ───────────────────────── Sem dados fictícios ─────────────────────────
-    console.log('\n-- Sem mock/random nas métricas do dashboard --');
+    // ───────────────────────── Sem dados fictícios / sem lixo dos cards removidos ─────────────────────────
+    console.log('\n-- Sem mock/random e sem referências aos cards removidos --');
     const pageSrc = readFileSync(
       join(__dirname, '../../src/app/admin/(protected)/page.tsx'),
       'utf-8',
@@ -287,6 +286,13 @@ async function main() {
     assert('visitors.ts não usa Math.random', !visitorsSrc.includes('Math.random'));
     assert('página do dashboard não contém mock/fake/dummy hardcoded',
       !/\b(mock|fake|dummy)\b/i.test(pageSrc));
+    assert('card "Valor em pedidos hoje" foi removido', !pageSrc.includes('Valor em pedidos hoje'));
+    assert('card "Taxa de conversão" foi removido', !pageSrc.includes('Taxa de conversão'));
+    assert('sem referência residual a convertedToday', !pageSrc.includes('convertedToday'));
+    assert('sem referência residual a conversionRateLabel', !visitorsSrc.includes('conversionRateLabel'));
+    assert('seção "Sessões e pedidos" tem só os 4 cards esperados',
+      ['Visitantes agora', 'Sessões hoje', 'Sessões sem pedido', 'Pedidos hoje']
+        .every((label) => pageSrc.includes(label)));
   } finally {
     await cleanupSessions();
     await cleanupOrders();

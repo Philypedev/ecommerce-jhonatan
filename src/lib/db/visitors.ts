@@ -171,13 +171,28 @@ export const countSessionsToday = async (): Promise<number> => {
   );
 };
 
-/** Sessões criadas hoje que viraram pedido (convertedAt not null). */
-export const countConvertedSessionsToday = async (): Promise<number> => {
+/**
+ * Sessões criadas hoje que já têm um LeadOrder associado (convertedAt +
+ * leadOrderId preenchidos por markSessionConverted/markLatestSessionByVisitorConverted
+ * no checkout — ver src/app/actions/checkout.ts). Base real de "Sessões sem
+ * pedido" no dashboard: sessionsToday - countSessionsWithOrderToday.
+ */
+export const countSessionsWithOrderToday = async (): Promise<number> => {
   const start = startOfTodayLocal();
   return countSingle(
     prisma.$queryRaw`SELECT COUNT(*) as count FROM "VisitorSession" WHERE "firstSeenAt" >= ${start} AND "convertedAt" IS NOT NULL`,
   );
 };
+
+/**
+ * "Sessões sem pedido" = sessões de hoje que ainda não têm LeadOrder
+ * associado. Nunca `sessionsToday - ordersToday` (uma sessão pode gerar mais
+ * de um pedido); o `Math.max(0, ...)` é defensivo contra drift de dados.
+ */
+export const computeSessionsWithoutOrder = (
+  sessionsToday: number,
+  sessionsWithOrderToday: number,
+): number => Math.max(0, sessionsToday - sessionsWithOrderToday);
 
 /**
  * Lista de visitantes online agora — uma linha por visitorId, com os dados
@@ -219,11 +234,3 @@ export const getActiveVisitors = async (limit = 12): Promise<ActiveVisitor[]> =>
     lastSeenAt: typeof r.lastSeenAt === 'string' ? new Date(r.lastSeenAt) : r.lastSeenAt,
   }));
 };
-
-/**
- * Rótulo de taxa de conversão para o dashboard: sessões de hoje que viraram
- * pedido / sessões de hoje. Sem sessões hoje não dá pra calcular uma
- * conversão — retorna "—" em vez de inventar 0%.
- */
-export const conversionRateLabel = (sessionsToday: number, convertedToday: number): string =>
-  sessionsToday > 0 ? `${Math.round((convertedToday / sessionsToday) * 1000) / 10}%` : '—';

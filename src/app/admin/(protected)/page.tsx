@@ -6,10 +6,10 @@ import { isUsingDefaultPassword } from '@/app/actions/account';
 import { getStoreSettings } from '@/lib/db/settings';
 import { listPageContents } from '@/lib/db/pages';
 import {
-  conversionRateLabel,
+  computeSessionsWithoutOrder,
   countActiveVisitors,
-  countConvertedSessionsToday,
   countSessionsToday,
+  countSessionsWithOrderToday,
 } from '@/lib/db/visitors';
 import { startOfStoreDay } from '@/lib/storeTime';
 import {
@@ -169,11 +169,10 @@ export default async function AdminOverviewPage() {
     // Sessões / visitantes (todos do banco real)
     activeVisitors,
     sessionsToday,
-    convertedToday,
+    sessionsWithOrderToday,
     // Pedidos (todos do banco real — LeadOrder)
     ordersToday,
     ordersNewCount,
-    ordersTodayAggregate,
     recentOrders,
     // Catálogo (Product/Category reais)
     totalProducts,
@@ -191,15 +190,9 @@ export default async function AdminOverviewPage() {
   ] = await Promise.all([
     countActiveVisitors().catch(() => 0),
     countSessionsToday().catch(() => 0),
-    countConvertedSessionsToday().catch(() => 0),
+    countSessionsWithOrderToday().catch(() => 0),
     prisma.leadOrder.count({ where: { createdAt: { gte: startOfDay } } }),
     prisma.leadOrder.count({ where: { status: 'NOVO' } }),
-    // Valor estimado é DE HOJE — para ficar coerente com "Pedidos hoje" e
-    // "Taxa de conversão" no mesmo card-deck.
-    prisma.leadOrder.aggregate({
-      _sum: { total: true },
-      where: { createdAt: { gte: startOfDay } },
-    }),
     prisma.leadOrder.findMany({
       orderBy: { createdAt: 'desc' },
       take: 5,
@@ -236,9 +229,7 @@ export default async function AdminOverviewPage() {
     isUsingDefaultPassword(session.uid),
   ]);
 
-  const estimatedTodayValue = ordersTodayAggregate._sum.total ?? 0;
-  const sessionsWithoutOrder = Math.max(0, sessionsToday - convertedToday);
-  const conversionLabel = conversionRateLabel(sessionsToday, convertedToday);
+  const sessionsWithoutOrder = computeSessionsWithoutOrder(sessionsToday, sessionsWithOrderToday);
 
   // ───── checks de configuração reais (não confiam em seed defaults) ─────
   const whatsappConfigured = isRealWhatsapp(settings?.whatsappNumber);
@@ -320,22 +311,16 @@ export default async function AdminOverviewPage() {
         <SectionTitle hint="Atualiza automaticamente a cada 20 segundos">
           Sessões e pedidos
         </SectionTitle>
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <StatCard label="Visitantes agora" value={activeVisitors} hint="Online neste momento" tone="live" />
           <StatCard label="Sessões hoje" value={sessionsToday} hint="Entraram na loja hoje" />
-          <StatCard label="Sessões sem pedido" value={sessionsWithoutOrder} hint="Entraram, mas não finalizaram" tone={sessionsWithoutOrder > 0 ? 'warning' : undefined} />
-          <StatCard label="Pedidos hoje" value={ordersToday} hint="Pedidos enviados pelo site" />
           <StatCard
-            label="Valor em pedidos hoje"
-            value={formatCurrency(estimatedTodayValue)}
-            hint="Soma dos pedidos de hoje — intenção de compra via WhatsApp, não é faturamento confirmado"
+            label="Sessões sem pedido"
+            value={sessionsWithoutOrder}
+            hint="Entraram, mas ainda não enviaram um pedido"
+            tone={sessionsWithoutOrder > 0 ? 'warning' : undefined}
           />
-          <StatCard
-            label="Taxa de conversão"
-            value={conversionLabel}
-            hint="Sessões de hoje que viraram pedido"
-            tone={conversionLabel !== '—' && conversionLabel !== '0%' ? 'success' : undefined}
-          />
+          <StatCard label="Pedidos hoje" value={ordersToday} hint="Finalizaram o checkout e abriram o WhatsApp" />
         </div>
       </section>
 
